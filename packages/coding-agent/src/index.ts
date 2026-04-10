@@ -179,10 +179,14 @@ export {
 	createLsTool,
 	createReadOnlyTools,
 	createReadTool,
+	createSessionStepRuntime,
 	createWriteTool,
+	initializeSessionLoopState,
 	type PromptTemplate,
 	// Pre-built tools (use process.cwd())
 	readOnlyTools,
+	type SessionStepRuntime,
+	stepSessionLoop,
 } from "./core/sdk.js";
 export {
 	type BranchSummaryEntry,
@@ -207,6 +211,18 @@ export {
 	type SessionMessageEntry,
 	type ThinkingLevelChangeEntry,
 } from "./core/session-manager.js";
+export type {
+	SessionCompactionRequest,
+	SessionLoopInput,
+	SessionLoopPhase,
+	SessionLoopState,
+	SessionLoopTerminalStatus,
+	SessionPersistenceOp,
+	SessionQueueSnapshot,
+	SessionStepCommand,
+	SessionStepNextAction,
+	SessionStepResult,
+} from "./core/session-step-types.js";
 export {
 	type CompactionSettings,
 	type ImageSettings,

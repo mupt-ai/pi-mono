@@ -1,7 +1,8 @@
 import "@mariozechner/mini-lit/dist/ThemeToggle.js";
-import { Agent, type AgentMessage } from "@mariozechner/pi-agent-core";
+import { Agent } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import {
+	type AgentMessage,
 	type AgentState,
 	ApiKeyPromptDialog,
 	AppStorage,
@@ -79,8 +80,8 @@ const generateTitle = (messages: AgentMessage[]): string => {
 	if (typeof content === "string") {
 		text = content;
 	} else {
-		const textBlocks = content.filter((c: any) => c.type === "text");
-		text = textBlocks.map((c: any) => c.text || "").join(" ");
+		const textBlocks = content.filter((c): c is { type: "text"; text: string } => c.type === "text");
+		text = textBlocks.map((c) => c.text).join(" ");
 	}
 
 	text = text.trim();
@@ -94,8 +95,8 @@ const generateTitle = (messages: AgentMessage[]): string => {
 };
 
 const shouldSaveSession = (messages: AgentMessage[]): boolean => {
-	const hasUserMsg = messages.some((m: any) => m.role === "user" || m.role === "user-with-attachments");
-	const hasAssistantMsg = messages.some((m: any) => m.role === "assistant");
+	const hasUserMsg = messages.some((m) => m.role === "user" || m.role === "user-with-attachments");
+	const hasAssistantMsg = messages.some((m) => m.role === "assistant");
 	return hasUserMsg && hasAssistantMsg;
 };
 
@@ -178,28 +179,26 @@ Feel free to use these tools when needed to provide accurate and helpful respons
 		convertToLlm: customConvertToLlm,
 	});
 
-	agentUnsubscribe = agent.subscribe((event: any) => {
-		if (event.type === "state-update") {
-			const messages = event.state.messages;
+	agentUnsubscribe = agent.subscribe(() => {
+		const messages = agent.state.messages;
 
-			// Generate title after first successful response
-			if (!currentTitle && shouldSaveSession(messages)) {
-				currentTitle = generateTitle(messages);
-			}
-
-			// Create session ID on first successful save
-			if (!currentSessionId && shouldSaveSession(messages)) {
-				currentSessionId = crypto.randomUUID();
-				updateUrl(currentSessionId);
-			}
-
-			// Auto-save
-			if (currentSessionId) {
-				saveSession();
-			}
-
-			renderApp();
+		// Generate title after first successful response
+		if (!currentTitle && shouldSaveSession(messages)) {
+			currentTitle = generateTitle(messages);
 		}
+
+		// Create session ID on first successful save
+		if (!currentSessionId && shouldSaveSession(messages)) {
+			currentSessionId = crypto.randomUUID();
+			updateUrl(currentSessionId);
+		}
+
+		// Auto-save
+		if (currentSessionId) {
+			void saveSession();
+		}
+
+		renderApp();
 	});
 
 	await chatPanel.setAgent(agent, {

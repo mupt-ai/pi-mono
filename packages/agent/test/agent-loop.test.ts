@@ -8,8 +8,17 @@ import {
 } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
-import { agentLoop, agentLoopContinue } from "../src/agent-loop.js";
-import type { AgentContext, AgentEvent, AgentLoopConfig, AgentMessage, AgentTool } from "../src/types.js";
+import { agentLoop, agentLoopContinue, initializeLoopState, stepLoop } from "../src/agent-loop.js";
+import type {
+	AgentContext,
+	AgentEvent,
+	AgentLoopConfig,
+	AgentMessage,
+	AgentTool,
+	AgentToolResult,
+	StepLoopRuntime,
+	ToolExecutionRequest,
+} from "../src/types.js";
 
 // Mock stream for testing - mimics MockAssistantStream
 class MockAssistantStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
@@ -78,6 +87,46 @@ function createUserMessage(text: string): UserMessage {
 // Simple identity converter for tests - just passes through standard messages
 function identityConverter(messages: AgentMessage[]): Message[] {
 	return messages.filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult") as Message[];
+}
+
+async function executeToolRequestExternally(
+	request: ToolExecutionRequest,
+	tools: AgentTool<any>[] | undefined,
+): Promise<{ toolCallId: string; result: AgentToolResult<unknown>; isError: boolean }> {
+	const tool = tools?.find((candidate) => candidate.name === request.toolName);
+	if (!tool) {
+		throw new Error(`Tool not found: ${request.toolName}`);
+	}
+
+	try {
+		const result = await tool.execute(request.toolCallId, request.args as never);
+		return {
+			toolCallId: request.toolCallId,
+			result,
+			isError: false,
+		};
+	} catch (error) {
+		return {
+			toolCallId: request.toolCallId,
+			result: {
+				content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+				details: {},
+			},
+			isError: true,
+		};
+	}
+}
+
+function normalizeMessages(messages: AgentMessage[]): AgentMessage[] {
+	return messages.map((message) => {
+		if (!("timestamp" in message)) {
+			return message;
+		}
+		return {
+			...message,
+			timestamp: 0,
+		};
+	});
 }
 
 describe("agentLoop with AgentMessage", () => {
@@ -634,6 +683,310 @@ describe("agentLoop with AgentMessage", () => {
 
 		// Interrupt message should be in context when second LLM call is made
 		expect(sawInterruptInContext).toBe(true);
+	});
+});
+
+describe("stepLoop", () => {
+	it("should reproduce a simple agentLoop transcript and event order", async () => {
+		const context: AgentContext = {
+			systemPrompt: "You are helpful.",
+			messages: [],
+			tools: [],
+		};
+
+		const userPrompt: AgentMessage = createUserMessage("Hello");
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+
+		const createStreamFn = () => {
+			return () => {
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					const message = createAssistantMessage([{ type: "text", text: "Hi there!" }]);
+					stream.push({ type: "done", reason: "stop", message });
+				});
+				return stream;
+			};
+		};
+
+		const baselineEvents: AgentEvent[] = [];
+		const baselineStream = agentLoop([userPrompt], context, config, undefined, createStreamFn());
+		for await (const event of baselineStream) {
+			baselineEvents.push(event);
+		}
+		const baselineMessages = await baselineStream.result();
+
+		const runtime: StepLoopRuntime = {
+			config,
+			tools: context.tools,
+			streamFn: createStreamFn(),
+		};
+
+		let result = await stepLoop(
+			initializeLoopState([userPrompt], context, config),
+			{ type: "run_assistant_turn" },
+			runtime,
+		);
+		const stepEvents: AgentEvent[] = [...result.events];
+		expect(result.nextAction).toBe("finalize_turn");
+
+		result = await stepLoop(result.state, { type: "finalize_turn" }, runtime);
+		stepEvents.push(...result.events);
+		expect(result.nextAction).toBe("check_follow_up");
+
+		result = await stepLoop(result.state, { type: "check_follow_up" }, runtime);
+		stepEvents.push(...result.events);
+		expect(result.nextAction).toBe("completed");
+		expect(normalizeMessages(result.terminalMessages ?? [])).toEqual(normalizeMessages(baselineMessages));
+		expect(stepEvents.map((event) => event.type)).toEqual(baselineEvents.map((event) => event.type));
+	});
+
+	it("should externalize sequential tool execution", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const executed: string[] = [];
+		const tool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				executed.push(params.value);
+				return {
+					content: [{ type: "text", text: `echoed: ${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [tool],
+		};
+
+		const userPrompt: AgentMessage = createUserMessage("echo something");
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+			toolExecution: "sequential",
+		};
+
+		const createStreamFn = () => {
+			let callIndex = 0;
+			return () => {
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					if (callIndex === 0) {
+						const message = createAssistantMessage(
+							[{ type: "toolCall", id: "tool-1", name: "echo", arguments: { value: "hello" } }],
+							"toolUse",
+						);
+						stream.push({ type: "done", reason: "toolUse", message });
+					} else {
+						const message = createAssistantMessage([{ type: "text", text: "done" }]);
+						stream.push({ type: "done", reason: "stop", message });
+					}
+					callIndex++;
+				});
+				return stream;
+			};
+		};
+
+		const baselineStream = agentLoop([userPrompt], context, config, undefined, createStreamFn());
+		for await (const _event of baselineStream) {
+			// consume
+		}
+		const baselineMessages = await baselineStream.result();
+		executed.length = 0;
+
+		const runtime: StepLoopRuntime = {
+			config,
+			tools: context.tools,
+			streamFn: createStreamFn(),
+		};
+
+		let result = await stepLoop(
+			initializeLoopState([userPrompt], context, config),
+			{ type: "run_assistant_turn" },
+			runtime,
+		);
+		expect(result.nextAction).toBe("prepare_tool_calls");
+
+		result = await stepLoop(result.state, { type: "prepare_tool_calls" }, runtime);
+		expect(result.nextAction).toBe("complete_tool_call");
+		expect(executed).toEqual([]);
+		expect(result.toolExecutionRequests).toHaveLength(1);
+
+		const execution = await executeToolRequestExternally(
+			result.toolExecutionRequests?.[0] as ToolExecutionRequest,
+			context.tools,
+		);
+		expect(executed).toEqual(["hello"]);
+
+		result = await stepLoop(
+			result.state,
+			{
+				type: "complete_tool_call",
+				toolCallId: execution.toolCallId,
+				result: execution.result,
+				isError: execution.isError,
+			},
+			runtime,
+		);
+		expect(result.nextAction).toBe("finalize_turn");
+
+		result = await stepLoop(result.state, { type: "finalize_turn" }, runtime);
+		expect(result.nextAction).toBe("run_assistant_turn");
+
+		result = await stepLoop(result.state, { type: "run_assistant_turn" }, runtime);
+		expect(result.nextAction).toBe("finalize_turn");
+
+		result = await stepLoop(result.state, { type: "finalize_turn" }, runtime);
+		expect(result.nextAction).toBe("check_follow_up");
+
+		result = await stepLoop(result.state, { type: "check_follow_up" }, runtime);
+		expect(result.nextAction).toBe("completed");
+		expect(normalizeMessages(result.terminalMessages ?? [])).toEqual(normalizeMessages(baselineMessages));
+	});
+
+	it("should preserve source-ordered tool result emission for parallel tool calls", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const executed: string[] = [];
+		const tool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				executed.push(params.value);
+				return {
+					content: [{ type: "text", text: `echoed: ${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [tool],
+		};
+
+		const userPrompt: AgentMessage = createUserMessage("echo both");
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+			toolExecution: "parallel",
+		};
+
+		const createStreamFn = () => {
+			let callIndex = 0;
+			return () => {
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					if (callIndex === 0) {
+						const message = createAssistantMessage(
+							[
+								{ type: "toolCall", id: "tool-1", name: "echo", arguments: { value: "first" } },
+								{ type: "toolCall", id: "tool-2", name: "echo", arguments: { value: "second" } },
+							],
+							"toolUse",
+						);
+						stream.push({ type: "done", reason: "toolUse", message });
+					} else {
+						const message = createAssistantMessage([{ type: "text", text: "done" }]);
+						stream.push({ type: "done", reason: "stop", message });
+					}
+					callIndex++;
+				});
+				return stream;
+			};
+		};
+
+		const runtime: StepLoopRuntime = {
+			config,
+			tools: context.tools,
+			streamFn: createStreamFn(),
+		};
+
+		let result = await stepLoop(
+			initializeLoopState([userPrompt], context, config),
+			{ type: "run_assistant_turn" },
+			runtime,
+		);
+		expect(result.nextAction).toBe("prepare_tool_calls");
+
+		result = await stepLoop(result.state, { type: "prepare_tool_calls" }, runtime);
+		expect(result.nextAction).toBe("complete_tool_call");
+		expect(result.toolExecutionRequests).toHaveLength(2);
+		const toolRequests = result.toolExecutionRequests?.slice() ?? [];
+		const toolStartIds = result.events
+			.filter(
+				(event): event is Extract<AgentEvent, { type: "tool_execution_start" }> =>
+					event.type === "tool_execution_start",
+			)
+			.map((event) => event.toolCallId);
+		expect(toolStartIds).toEqual(["tool-1", "tool-2"]);
+
+		const secondExecution = await executeToolRequestExternally(
+			toolRequests[1] as ToolExecutionRequest,
+			context.tools,
+		);
+		result = await stepLoop(
+			result.state,
+			{
+				type: "complete_tool_call",
+				toolCallId: secondExecution.toolCallId,
+				result: secondExecution.result,
+				isError: secondExecution.isError,
+			},
+			runtime,
+		);
+		expect(result.events).toEqual([]);
+		expect(result.nextAction).toBe("complete_tool_call");
+
+		const firstExecution = await executeToolRequestExternally(toolRequests[0] as ToolExecutionRequest, context.tools);
+		result = await stepLoop(
+			result.state,
+			{
+				type: "complete_tool_call",
+				toolCallId: firstExecution.toolCallId,
+				result: firstExecution.result,
+				isError: firstExecution.isError,
+			},
+			runtime,
+		);
+
+		const toolEndIds = result.events
+			.filter(
+				(event): event is Extract<AgentEvent, { type: "tool_execution_end" }> =>
+					event.type === "tool_execution_end",
+			)
+			.map((event) => event.toolCallId);
+		expect(toolEndIds).toEqual(["tool-1", "tool-2"]);
+
+		const toolResultIds = result.events.flatMap((event) => {
+			if (event.type !== "message_end" || event.message.role !== "toolResult") {
+				return [];
+			}
+			return [event.message.toolCallId];
+		});
+		expect(toolResultIds).toEqual(["tool-1", "tool-2"]);
+		expect(executed).toEqual(["second", "first"]);
+
+		result = await stepLoop(result.state, { type: "finalize_turn" }, runtime);
+		expect(result.nextAction).toBe("run_assistant_turn");
+
+		result = await stepLoop(result.state, { type: "run_assistant_turn" }, runtime);
+		expect(result.nextAction).toBe("finalize_turn");
+
+		result = await stepLoop(result.state, { type: "finalize_turn" }, runtime);
+		expect(result.nextAction).toBe("check_follow_up");
+
+		result = await stepLoop(result.state, { type: "check_follow_up" }, runtime);
+		expect(result.nextAction).toBe("completed");
 	});
 });
 

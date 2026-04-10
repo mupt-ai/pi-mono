@@ -316,6 +316,98 @@ export interface AgentContext {
 	tools?: AgentTool<any>[];
 }
 
+export type LoopPhase =
+	| "awaiting_assistant"
+	| "assistant_streaming"
+	| "awaiting_tool_preflight"
+	| "awaiting_tool_execution"
+	| "awaiting_turn_close"
+	| "awaiting_follow_up"
+	| "completed"
+	| "failed";
+
+export type LoopTerminalStatus = "running" | "completed" | "failed";
+
+export interface PreparedToolCallSnapshot {
+	toolCallId: string;
+	toolName: string;
+	rawArguments: AgentToolCall["arguments"];
+	args: unknown;
+}
+
+export interface ExecutedToolCallSnapshot {
+	toolCallId: string;
+	result: AgentToolResult<unknown>;
+	isError: boolean;
+}
+
+export interface CompletedToolCallSnapshot {
+	toolCallId: string;
+	toolName: string;
+	rawArguments: AgentToolCall["arguments"];
+	args?: unknown;
+	result: AgentToolResult<unknown>;
+	isError: boolean;
+	message: ToolResultMessage<unknown>;
+}
+
+export interface LoopState {
+	systemPrompt: string;
+	messages: AgentMessage[];
+	newMessages: AgentMessage[];
+	phase: LoopPhase;
+	toolExecution: ToolExecutionMode;
+	pendingPromptMessages: AgentMessage[];
+	pendingSteeringMessages: AgentMessage[];
+	pendingFollowUpMessages: AgentMessage[];
+	pendingToolCalls: AgentToolCall[];
+	preparedToolCalls: PreparedToolCallSnapshot[];
+	executedToolCalls: ExecutedToolCallSnapshot[];
+	completedToolResults: CompletedToolCallSnapshot[];
+	currentAssistantMessage?: AssistantMessage;
+	firstTurn: boolean;
+	initialSteeringChecked: boolean;
+	terminalStatus: LoopTerminalStatus;
+}
+
+export interface ToolExecutionRequest {
+	toolCallId: string;
+	toolName: string;
+	rawArguments: AgentToolCall["arguments"];
+	args: unknown;
+}
+
+export type StepCommand =
+	| { type: "run_assistant_turn" }
+	| { type: "prepare_tool_calls" }
+	| { type: "complete_tool_call"; toolCallId: string; result: AgentToolResult<unknown>; isError: boolean }
+	| { type: "finalize_turn" }
+	| { type: "check_follow_up" };
+
+export type StepLoopNextAction =
+	| "run_assistant_turn"
+	| "prepare_tool_calls"
+	| "complete_tool_call"
+	| "finalize_turn"
+	| "check_follow_up"
+	| "completed"
+	| "failed";
+
+export interface StepResult {
+	state: LoopState;
+	events: AgentEvent[];
+	nextAction: StepLoopNextAction;
+	providerRequestPayload?: unknown;
+	toolExecutionRequests?: ToolExecutionRequest[];
+	terminalMessages?: AgentMessage[];
+}
+
+export interface StepLoopRuntime {
+	config: AgentLoopConfig;
+	tools?: AgentTool<any>[];
+	streamFn?: StreamFn;
+}
+
 /**
  * Events emitted by the Agent for UI updates.
  *
