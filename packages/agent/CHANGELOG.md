@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added atomic loop-state APIs via `initializeLoopState()` and `stepLoop()` for externally orchestrated assistant/tool boundaries without changing the existing `Agent`, `agentLoop()`, or `runAgentLoopContinue()` behavior.
+
 ## [0.66.1] - 2026-04-08
 
 ## [0.66.0] - 2026-04-08
