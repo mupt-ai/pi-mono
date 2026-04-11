@@ -33,7 +33,7 @@
 		"node": ">=20.0.0"
 	},
 	"dependencies": {
-		"@mariozechner/pi-agent-core": "^0.66.1",
+		"@mupt-ai/pi-agent-core": "^0.66.1",
 		"chalk": "^5.5.0"
 	},
 	"devDependencies": {}

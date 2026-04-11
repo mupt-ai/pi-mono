@@ -7,7 +7,6 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, ImageContent, Message, Model, OAuthProviderId } from "@mariozechner/pi-ai";
 import type {
 	AutocompleteItem,
@@ -36,6 +35,7 @@ import {
 	TUI,
 	visibleWidth,
 } from "@mariozechner/pi-tui";
+import type { AgentMessage } from "@mupt-ai/pi-agent-core";
 import { spawn, spawnSync } from "child_process";
 import {
 	APP_NAME,
@@ -663,28 +663,10 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Check npm registry for a newer version.
+	 * Private GitHub Packages builds do not have a public metadata endpoint.
 	 */
 	private async checkForNewVersion(): Promise<string | undefined> {
-		if (process.env.PI_SKIP_VERSION_CHECK || process.env.PI_OFFLINE) return undefined;
-
-		try {
-			const response = await fetch("https://registry.npmjs.org/@mariozechner/pi-coding-agent/latest", {
-				signal: AbortSignal.timeout(10000),
-			});
-			if (!response.ok) return undefined;
-
-			const data = (await response.json()) as { version?: string };
-			const latestVersion = data.version;
-
-			if (latestVersion && latestVersion !== this.version) {
-				return latestVersion;
-			}
-
-			return undefined;
-		} catch {
-			return undefined;
-		}
+		return undefined;
 	}
 
 	private async checkForPackageUpdates(): Promise<string[]> {
@@ -3092,11 +3074,11 @@ export class InteractiveMode {
 	}
 
 	showNewVersionNotification(newVersion: string): void {
-		const action = theme.fg("accent", getUpdateInstruction("@mariozechner/pi-coding-agent"));
+		const action = theme.fg("accent", getUpdateInstruction("@mupt-ai/pi-coding-agent"));
 		const updateInstruction = theme.fg("muted", `New version ${newVersion} is available. `) + action;
 		const changelogUrl = theme.fg(
 			"accent",
-			"https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/CHANGELOG.md",
+			"https://github.com/mupt-ai/pi-mono/blob/main/packages/coding-agent/CHANGELOG.md",
 		);
 		const changelogLine = theme.fg("muted", "Changelog: ") + changelogUrl;
 

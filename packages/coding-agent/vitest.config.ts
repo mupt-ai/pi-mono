@@ -9,7 +9,7 @@ export default defineConfig({
 				replacement: fileURLToPath(new URL("../ai/src/oauth.ts", import.meta.url)),
 			},
 			{
-				find: "@mariozechner/pi-agent-core",
+				find: "@mupt-ai/pi-agent-core",
 				replacement: fileURLToPath(new URL("../agent/src/index.ts", import.meta.url)),
 			},
 			{

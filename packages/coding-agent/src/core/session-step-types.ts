@@ -1,11 +1,11 @@
+import type { AssistantMessage, ImageContent } from "@mariozechner/pi-ai";
 import type {
 	AgentEvent,
 	AgentMessage,
 	AgentToolResult,
 	LoopState,
 	ToolExecutionRequest,
-} from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, ImageContent } from "@mariozechner/pi-ai";
+} from "@mupt-ai/pi-agent-core";
 import type { InputSource } from "./extensions/index.js";
 
 export type SessionLoopPhase =

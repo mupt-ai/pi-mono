@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import { Agent, type AgentMessage, type ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { type Message, type Model, streamSimple } from "@mariozechner/pi-ai";
+import { Agent, type AgentMessage, type ThinkingLevel } from "@mupt-ai/pi-agent-core";
 import { getAgentDir, getDocsPath } from "../config.js";
 import { AgentSession, type PromptOptions } from "./agent-session.js";
 import { AuthStorage } from "./auth-storage.js";

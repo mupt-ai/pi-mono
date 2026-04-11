@@ -11,7 +11,7 @@
  */
 
 import type { UserMessage } from "@mariozechner/pi-ai";
-import { type SessionManager, type SessionMessageEntry, SettingsManager } from "@mariozechner/pi-coding-agent";
+import { type SessionManager, type SessionMessageEntry, SettingsManager } from "@mupt-ai/pi-coding-agent";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 

@@ -1,5 +1,5 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Model } from "@mariozechner/pi-ai";
+import type { AgentMessage } from "@mupt-ai/pi-agent-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generateSummary } from "../src/core/compaction/index.js";
 

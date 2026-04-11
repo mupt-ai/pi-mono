@@ -8,7 +8,7 @@ import "./MessageList.js";
 import "./Messages.js"; // Import for side effects to register the custom elements
 import { getAppStorage } from "../storage/app-storage.js";
 import "./StreamingMessageContainer.js";
-import type { Agent, AgentEvent } from "@mariozechner/pi-agent-core";
+import type { Agent, AgentEvent } from "@mupt-ai/pi-agent-core";
 import type { Attachment } from "../utils/attachment-utils.js";
 import { formatUsage } from "../utils/format.js";
 import { i18n } from "../utils/i18n.js";
