@@ -4,6 +4,8 @@ import type {
 	AgentMessage,
 	AgentToolResult,
 	LoopState,
+	NormalizedAssistantMessageEventSource,
+	PreparedProviderRequest,
 	ToolExecutionRequest,
 } from "@mupt-ai/pi-agent-core";
 import type { InputSource } from "./extensions/index.js";
@@ -11,6 +13,7 @@ import type { InputSource } from "./extensions/index.js";
 export type SessionLoopPhase =
 	| "preparing_prompt"
 	| "awaiting_assistant"
+	| "awaiting_provider_response"
 	| "awaiting_tool_preflight"
 	| "awaiting_tool_execution"
 	| "awaiting_turn_close"
@@ -81,6 +84,7 @@ export type SessionPersistenceOp =
 export type SessionStepCommand =
 	| { type: "prepare_prompt" }
 	| { type: "run_assistant_turn" }
+	| { type: "complete_provider_response"; events: NormalizedAssistantMessageEventSource }
 	| { type: "prepare_tool_calls" }
 	| { type: "complete_tool_call"; toolCallId: string; result: AgentToolResult<unknown>; isError: boolean }
 	| { type: "finalize_turn" }
@@ -89,6 +93,7 @@ export type SessionStepCommand =
 
 export type SessionStepNextAction =
 	| "run_assistant_turn"
+	| "complete_provider_response"
 	| "prepare_tool_calls"
 	| "complete_tool_call"
 	| "finalize_turn"
@@ -103,6 +108,7 @@ export interface SessionStepResult {
 	sessionEvents: unknown[];
 	sessionOps: SessionPersistenceOp[];
 	nextAction: SessionStepNextAction;
+	preparedProviderRequest?: PreparedProviderRequest;
 	providerRequestPayload?: unknown;
 	toolExecutionRequests?: ToolExecutionRequest[];
 	terminalMessages?: AgentMessage[];

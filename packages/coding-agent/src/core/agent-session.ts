@@ -25,6 +25,7 @@ import {
 	type AgentTool,
 	initializeLoopState,
 	type LoopState,
+	type ProviderExecutionMode,
 	stepLoop as stepCoreLoop,
 	type ThinkingLevel,
 	type ToolExecutionRequest,
@@ -173,6 +174,8 @@ export interface AgentSessionConfig {
 	extensionRunnerRef?: { current?: ExtensionRunner };
 	/** Session start event metadata emitted when extensions bind to this runtime. */
 	sessionStartEvent?: SessionStartEvent;
+	/** Provider execution mode for stepped assistant turns. Default: inline. */
+	providerExecutionMode?: ProviderExecutionMode;
 }
 
 export interface ExtensionBindings {
@@ -301,6 +304,7 @@ export class AgentSession {
 	private _initialActiveToolNames?: string[];
 	private _baseToolsOverride?: Record<string, AgentTool>;
 	private _sessionStartEvent: SessionStartEvent;
+	private _providerExecutionMode: ProviderExecutionMode;
 	private _extensionUIContext?: ExtensionUIContext;
 	private _extensionCommandContextActions?: ExtensionCommandContextActions;
 	private _extensionShutdownHandler?: ShutdownHandler;
@@ -332,6 +336,7 @@ export class AgentSession {
 		this._initialActiveToolNames = config.initialActiveToolNames;
 		this._baseToolsOverride = config.baseToolsOverride;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
+		this._providerExecutionMode = config.providerExecutionMode ?? "inline";
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
@@ -1041,7 +1046,7 @@ export class AgentSession {
 			);
 		}
 
-		if (!this._modelRegistry.hasConfiguredAuth(this.model)) {
+		if (this._providerExecutionMode !== "external" && !this._modelRegistry.hasConfiguredAuth(this.model)) {
 			const isOAuth = this._modelRegistry.isUsingOAuth(this.model);
 			if (isOAuth) {
 				throw new Error(
@@ -1164,6 +1169,7 @@ export class AgentSession {
 		const coreEvents: AgentEvent[] = [];
 		const sessionEvents: AgentSessionEvent[] = [];
 		const sessionOps: SessionPersistenceOp[] = [];
+		let preparedProviderRequest: SessionStepResult["preparedProviderRequest"];
 		let providerRequestPayload: unknown;
 		let toolExecutionRequests: ToolExecutionRequest[] | undefined;
 		let terminalMessages: AgentMessage[] | undefined;
@@ -1201,6 +1207,7 @@ export class AgentSession {
 			}
 
 			case "run_assistant_turn":
+			case "complete_provider_response":
 			case "prepare_tool_calls":
 			case "complete_tool_call":
 			case "finalize_turn": {
@@ -1216,16 +1223,25 @@ export class AgentSession {
 								result: command.result,
 								isError: command.isError,
 							}
-						: ({ type: command.type } as const);
+						: command.type === "complete_provider_response"
+							? {
+									type: "complete_provider_response" as const,
+									events: command.events,
+								}
+							: ({ type: command.type } as const);
 				const coreResult = await stepCoreLoop(nextState.coreState, coreCommand, runtime, signal);
 				coreEvents.push(...coreResult.events);
 				await this._applyCoreStepEvents(coreResult.events, sessionOps);
 				nextState.coreState = coreResult.state;
+				preparedProviderRequest = coreResult.preparedProviderRequest;
 				providerRequestPayload = coreResult.providerRequestPayload;
 				toolExecutionRequests = coreResult.toolExecutionRequests;
 				terminalMessages = coreResult.terminalMessages;
 
-				if (command.type === "run_assistant_turn" && coreResult.nextAction === "failed") {
+				if (
+					(command.type === "run_assistant_turn" || command.type === "complete_provider_response") &&
+					coreResult.nextAction === "failed"
+				) {
 					nextState.phase = "awaiting_post_turn_effects";
 					nextAction = "run_post_turn_effects";
 				} else if (command.type === "finalize_turn" && coreResult.nextAction === "check_follow_up") {
@@ -1302,6 +1318,7 @@ export class AgentSession {
 			sessionEvents,
 			sessionOps,
 			nextAction,
+			preparedProviderRequest,
 			providerRequestPayload,
 			toolExecutionRequests,
 			terminalMessages,
@@ -1470,6 +1487,7 @@ export class AgentSession {
 			},
 			tools: this.agent.state.tools,
 			streamFn: this.agent.streamFn,
+			providerExecutionMode: this._providerExecutionMode,
 		};
 	}
 
@@ -1557,7 +1575,7 @@ export class AgentSession {
 			);
 		}
 
-		if (!this._modelRegistry.hasConfiguredAuth(this.model)) {
+		if (this._providerExecutionMode !== "external" && !this._modelRegistry.hasConfiguredAuth(this.model)) {
 			const isOAuth = this._modelRegistry.isUsingOAuth(this.model);
 			if (isOAuth) {
 				throw new Error(
@@ -1623,6 +1641,8 @@ export class AgentSession {
 		switch (phase) {
 			case "awaiting_assistant":
 				return "awaiting_assistant";
+			case "awaiting_provider_response":
+				return "awaiting_provider_response";
 			case "awaiting_tool_preflight":
 				return "awaiting_tool_preflight";
 			case "awaiting_tool_execution":
@@ -1644,6 +1664,8 @@ export class AgentSession {
 		switch (nextAction) {
 			case "run_assistant_turn":
 				return "run_assistant_turn";
+			case "complete_provider_response":
+				return "complete_provider_response";
 			case "prepare_tool_calls":
 				return "prepare_tool_calls";
 			case "complete_tool_call":

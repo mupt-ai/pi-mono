@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { type Message, type Model, streamSimple } from "@mariozechner/pi-ai";
-import { Agent, type AgentMessage, type ThinkingLevel } from "@mupt-ai/pi-agent-core";
+import { Agent, type AgentMessage, type ProviderExecutionMode, type ThinkingLevel } from "@mupt-ai/pi-agent-core";
 import { getAgentDir, getDocsPath } from "../config.js";
 import { AgentSession, type PromptOptions } from "./agent-session.js";
 import { AuthStorage } from "./auth-storage.js";
@@ -73,6 +73,8 @@ export interface CreateAgentSessionOptions {
 	settingsManager?: SettingsManager;
 	/** Session start event metadata for extension runtime startup. */
 	sessionStartEvent?: SessionStartEvent;
+	/** Provider execution mode for stepped assistant turns. Default: "inline". */
+	providerExecutionMode?: ProviderExecutionMode;
 }
 
 /** Result from createAgentSession */
@@ -356,6 +358,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		initialActiveToolNames,
 		extensionRunnerRef,
 		sessionStartEvent: options.sessionStartEvent,
+		providerExecutionMode: options.providerExecutionMode,
 	});
 	const extensionsResult = resourceLoader.getExtensions();
 
