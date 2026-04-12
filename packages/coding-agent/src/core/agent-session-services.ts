@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { Model } from "@mariozechner/pi-ai";
-import type { ThinkingLevel } from "@mupt-ai/pi-agent-core";
+import type { ProviderExecutionMode, ThinkingLevel } from "@mupt-ai/pi-agent-core";
 import { getAgentDir } from "../config.js";
 import { AuthStorage } from "./auth-storage.js";
 import type { SessionStartEvent, ToolDefinition } from "./extensions/index.js";
@@ -55,6 +55,7 @@ export interface CreateAgentSessionFromServicesOptions {
 	scopedModels?: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
 	tools?: Tool[];
 	customTools?: ToolDefinition[];
+	providerExecutionMode?: ProviderExecutionMode;
 }
 
 /**
@@ -192,6 +193,7 @@ export async function createAgentSessionFromServices(
 		scopedModels: options.scopedModels,
 		tools: options.tools,
 		customTools: options.customTools,
+		providerExecutionMode: options.providerExecutionMode,
 		sessionStartEvent: options.sessionStartEvent,
 	});
 }

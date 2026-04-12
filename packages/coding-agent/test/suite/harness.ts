@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FauxModelDefinition, FauxProviderRegistration, FauxResponseStep, Model } from "@mariozechner/pi-ai";
 import { registerFauxProvider } from "@mariozechner/pi-ai";
-import type { AgentMessage, AgentTool } from "@mupt-ai/pi-agent-core";
+import type { AgentMessage, AgentTool, ProviderExecutionMode } from "@mupt-ai/pi-agent-core";
 import { Agent } from "@mupt-ai/pi-agent-core";
 import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.js";
 import { AuthStorage } from "../../src/core/auth-storage.js";
@@ -63,6 +63,8 @@ export interface HarnessOptions {
 	resourceLoader?: ResourceLoader;
 	extensionFactories?: Array<ExtensionFactory | CreateTestExtensionsResultInput>;
 	withConfiguredAuth?: boolean;
+	providerExecutionMode?: ProviderExecutionMode;
+	fauxTokenSize?: { min?: number; max?: number };
 }
 
 export interface Harness {
@@ -93,6 +95,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 	const tempDir = createTempDir();
 	const fauxProvider: FauxProviderRegistration = registerFauxProvider({
 		models: options.models,
+		tokenSize: options.fauxTokenSize,
 	});
 	fauxProvider.setResponses([]);
 	const model = fauxProvider.getModel();
@@ -163,6 +166,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		resourceLoader,
 		baseToolsOverride: toolMap,
 		extensionRunnerRef,
+		providerExecutionMode: options.providerExecutionMode,
 	});
 
 	const events: AgentSessionEvent[] = [];

@@ -1,6 +1,7 @@
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
+	Context,
 	ImageContent,
 	Message,
 	Model,
@@ -11,6 +12,7 @@ import type {
 	ToolResultMessage,
 } from "@mariozechner/pi-ai";
 import type { Static, TSchema } from "@sinclair/typebox";
+import type { NormalizedAssistantMessageEventSource } from "./normalized-assistant-events.js";
 
 /**
  * Stream function used by the agent loop.
@@ -33,6 +35,8 @@ export type StreamFn = (
  *   Final tool results are still emitted in assistant source order.
  */
 export type ToolExecutionMode = "sequential" | "parallel";
+
+export type ProviderExecutionMode = "inline" | "external";
 
 /** A single tool call content block emitted by an assistant message. */
 export type AgentToolCall = Extract<AssistantMessage["content"][number], { type: "toolCall" }>;
@@ -319,6 +323,7 @@ export interface AgentContext {
 export type LoopPhase =
 	| "awaiting_assistant"
 	| "assistant_streaming"
+	| "awaiting_provider_response"
 	| "awaiting_tool_preflight"
 	| "awaiting_tool_execution"
 	| "awaiting_turn_close"
@@ -377,8 +382,17 @@ export interface ToolExecutionRequest {
 	args: unknown;
 }
 
+export type PreparedProviderRequestOptions = Omit<SimpleStreamOptions, "signal" | "apiKey" | "onPayload">;
+
+export interface PreparedProviderRequest {
+	model: Model<any>;
+	context: Context;
+	options: PreparedProviderRequestOptions;
+}
+
 export type StepCommand =
 	| { type: "run_assistant_turn" }
+	| { type: "complete_provider_response"; events: NormalizedAssistantMessageEventSource }
 	| { type: "prepare_tool_calls" }
 	| { type: "complete_tool_call"; toolCallId: string; result: AgentToolResult<unknown>; isError: boolean }
 	| { type: "finalize_turn" }
@@ -386,6 +400,7 @@ export type StepCommand =
 
 export type StepLoopNextAction =
 	| "run_assistant_turn"
+	| "complete_provider_response"
 	| "prepare_tool_calls"
 	| "complete_tool_call"
 	| "finalize_turn"
@@ -397,6 +412,7 @@ export interface StepResult {
 	state: LoopState;
 	events: AgentEvent[];
 	nextAction: StepLoopNextAction;
+	preparedProviderRequest?: PreparedProviderRequest;
 	providerRequestPayload?: unknown;
 	toolExecutionRequests?: ToolExecutionRequest[];
 	terminalMessages?: AgentMessage[];
@@ -406,6 +422,7 @@ export interface StepLoopRuntime {
 	config: AgentLoopConfig;
 	tools?: AgentTool<any>[];
 	streamFn?: StreamFn;
+	providerExecutionMode?: ProviderExecutionMode;
 }
 
 /**
