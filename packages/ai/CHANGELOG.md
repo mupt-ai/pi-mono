@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.67.1] - 2026-04-13
+
+## [0.67.0] - 2026-04-13
+
 ### Added
 
 - Added full `OpenRouterRouting` field support, including fallbacks, parameter requirements, data collection, ZDR, ignore lists, quantizations, provider sorting, max price, and preferred throughput and latency constraints ([#2904](https://github.com/badlogic/pi-mono/pull/2904) by [@zmberber](https://github.com/zmberber))
