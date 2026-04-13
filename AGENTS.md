@@ -172,9 +172,15 @@ For non-standard auth, create utility (e.g., `bedrock-utils.ts`) with credential
 
 ## Releasing
 
-**Lockstep versioning**: All packages always share the same version number. Every release updates all packages together.
+**Full workspace releases**: The main release scripts keep the public workspace packages in lockstep.
 
-**Version semantics** (no major releases):
+**GitHub Packages releases**: `packages/agent` and `packages/coding-agent` can be released separately when only the GitHub Packages artifacts need to move.
+- Use `npm run version:github-packages:patch` or `npm run version:github-packages:minor`
+- Then publish with `npm run publish:github-packages`
+- Do not use `npm run version:patch`, `npm run version:minor`, `npm run version:major`, or `node scripts/release.mjs` for a GitHub Packages-only release
+- Keep `@mariozechner/pi-ai` and `@mariozechner/pi-tui` pinned to the latest public npm versions that actually exist
+
+**Version semantics**:
 - `patch`: Bug fixes and new features
 - `minor`: API breaking changes
 
@@ -189,6 +195,8 @@ For non-standard auth, create utility (e.g., `bedrock-utils.ts`) with credential
    ```
 
 The script handles: version bump, CHANGELOG finalization, commit, tag, publish, and adding new `[Unreleased]` sections.
+
+For GitHub Packages-only releases, do not use the full release script. Use the targeted version/publish scripts above instead.
 
 ## **CRITICAL** Tool Usage Rules **CRITICAL**
 - NEVER use sed/cat to read a file or a range of a file. Always use the read tool (use offset + limit for ranged reads).

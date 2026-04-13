@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 /**
- * Syncs ALL @mariozechner/* package dependency versions to match their current versions.
- * This ensures lockstep versioning across the monorepo.
+ * Syncs lockstep package dependency versions to match their current versions.
+ * Selected public npm packages stay manually pinned so GitHub Packages releases
+ * do not depend on unpublished public versions.
  */
 
 import { readFileSync, writeFileSync, readdirSync } from 'fs';
@@ -12,6 +13,14 @@ const packagesDir = join(process.cwd(), 'packages');
 const packageDirs = readdirSync(packagesDir, { withFileTypes: true })
 	.filter(dirent => dirent.isDirectory())
 	.map(dirent => dirent.name);
+
+// These public npm packages intentionally lag the GitHub Packages lockstep release.
+// Keep their dependency ranges manual so coding-agent/agent-core can publish coherent
+// artifacts even when the public packages have not been republished yet.
+const MANUAL_DEPENDENCY_RANGES = new Set([
+	'@mariozechner/pi-ai',
+	'@mariozechner/pi-tui',
+]);
 
 // Read all package.json files and build version map
 const packages = {};
@@ -54,6 +63,9 @@ for (const [dir, pkg] of Object.entries(packages)) {
 	// Check dependencies
 	if (pkg.data.dependencies) {
 		for (const [depName, currentVersion] of Object.entries(pkg.data.dependencies)) {
+			if (MANUAL_DEPENDENCY_RANGES.has(depName)) {
+				continue;
+			}
 			if (versionMap[depName]) {
 				const newVersion = `^${versionMap[depName]}`;
 				if (currentVersion !== newVersion) {
@@ -70,6 +82,9 @@ for (const [dir, pkg] of Object.entries(packages)) {
 	// Check devDependencies
 	if (pkg.data.devDependencies) {
 		for (const [depName, currentVersion] of Object.entries(pkg.data.devDependencies)) {
+			if (MANUAL_DEPENDENCY_RANGES.has(depName)) {
+				continue;
+			}
 			if (versionMap[depName]) {
 				const newVersion = `^${versionMap[depName]}`;
 				if (currentVersion !== newVersion) {
