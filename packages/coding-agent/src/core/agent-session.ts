@@ -170,12 +170,16 @@ export interface AgentSessionConfig {
 	 * a definition-first registry even when callers provide plain AgentTool instances.
 	 */
 	baseToolsOverride?: Record<string, AgentTool>;
+	/** Override base tool definitions directly (useful for deterministic snapshot runtimes). */
+	baseToolDefinitionsOverride?: Record<string, ToolDefinition>;
 	/** Mutable ref used by Agent to access the current ExtensionRunner */
 	extensionRunnerRef?: { current?: ExtensionRunner };
 	/** Session start event metadata emitted when extensions bind to this runtime. */
 	sessionStartEvent?: SessionStartEvent;
 	/** Provider execution mode for stepped assistant turns. Default: inline. */
 	providerExecutionMode?: ProviderExecutionMode;
+	/** Whether compaction is executed inline by AgentSession or externally by the host. */
+	compactionExecutionMode?: "inline" | "external";
 }
 
 export interface ExtensionBindings {
@@ -303,8 +307,10 @@ export class AgentSession {
 	private _extensionRunnerRef?: { current?: ExtensionRunner };
 	private _initialActiveToolNames?: string[];
 	private _baseToolsOverride?: Record<string, AgentTool>;
+	private _baseToolDefinitionsOverride?: Record<string, ToolDefinition>;
 	private _sessionStartEvent: SessionStartEvent;
 	private _providerExecutionMode: ProviderExecutionMode;
+	private _compactionExecutionMode: "inline" | "external";
 	private _extensionUIContext?: ExtensionUIContext;
 	private _extensionCommandContextActions?: ExtensionCommandContextActions;
 	private _extensionShutdownHandler?: ShutdownHandler;
@@ -335,8 +341,10 @@ export class AgentSession {
 		this._extensionRunnerRef = config.extensionRunnerRef;
 		this._initialActiveToolNames = config.initialActiveToolNames;
 		this._baseToolsOverride = config.baseToolsOverride;
+		this._baseToolDefinitionsOverride = config.baseToolDefinitionsOverride;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
 		this._providerExecutionMode = config.providerExecutionMode ?? "inline";
+		this._compactionExecutionMode = config.compactionExecutionMode ?? "inline";
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
@@ -1063,7 +1071,7 @@ export class AgentSession {
 
 		// Check if we need to compact before sending (catches aborted responses)
 		const lastAssistant = this._findLastAssistantMessage();
-		if (lastAssistant) {
+		if (lastAssistant && this._compactionExecutionMode === "inline") {
 			await this._checkCompaction(lastAssistant, false);
 		}
 
@@ -1591,7 +1599,7 @@ export class AgentSession {
 		}
 
 		const lastAssistant = this._findLastAssistantMessage();
-		if (lastAssistant) {
+		if (lastAssistant && this._compactionExecutionMode === "inline") {
 			await this._checkCompaction(lastAssistant, false);
 		}
 
@@ -3203,17 +3211,19 @@ export class AgentSession {
 	}): void {
 		const autoResizeImages = this.settingsManager.getImageAutoResize();
 		const shellCommandPrefix = this.settingsManager.getShellCommandPrefix();
-		const baseToolDefinitions = this._baseToolsOverride
-			? Object.fromEntries(
-					Object.entries(this._baseToolsOverride).map(([name, tool]) => [
-						name,
-						createToolDefinitionFromAgentTool(tool),
-					]),
-				)
-			: createAllToolDefinitions(this._cwd, {
-					read: { autoResizeImages },
-					bash: { commandPrefix: shellCommandPrefix },
-				});
+		const baseToolDefinitions = this._baseToolDefinitionsOverride
+			? this._baseToolDefinitionsOverride
+			: this._baseToolsOverride
+				? Object.fromEntries(
+						Object.entries(this._baseToolsOverride).map(([name, tool]) => [
+							name,
+							createToolDefinitionFromAgentTool(tool),
+						]),
+					)
+				: createAllToolDefinitions(this._cwd, {
+						read: { autoResizeImages },
+						bash: { commandPrefix: shellCommandPrefix },
+					});
 
 		this._baseToolDefinitions = new Map(
 			Object.entries(baseToolDefinitions).map(([name, tool]) => [name, tool as ToolDefinition]),
@@ -3246,9 +3256,11 @@ export class AgentSession {
 			this._applyExtensionBindings(this._extensionRunner);
 		}
 
-		const defaultActiveToolNames = this._baseToolsOverride
-			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write"];
+		const defaultActiveToolNames = this._baseToolDefinitionsOverride
+			? Object.keys(this._baseToolDefinitionsOverride)
+			: this._baseToolsOverride
+				? Object.keys(this._baseToolsOverride)
+				: ["read", "bash", "edit", "write"];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,

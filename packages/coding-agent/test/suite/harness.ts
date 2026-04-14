@@ -17,6 +17,7 @@ import { ModelRegistry } from "../../src/core/model-registry.js";
 import { SessionManager } from "../../src/core/session-manager.js";
 import type { Settings } from "../../src/core/settings-manager.js";
 import { SettingsManager } from "../../src/core/settings-manager.js";
+import { markWorkflowSnapshotCompatibleAgent } from "../../src/core/workflow-agent-compat.js";
 import type { ExtensionFactory, ResourceLoader } from "../../src/index.js";
 import {
 	type CreateTestExtensionsResultInput,
@@ -168,6 +169,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		extensionRunnerRef,
 		providerExecutionMode: options.providerExecutionMode,
 	});
+	markWorkflowSnapshotCompatibleAgent(session.agent);
 
 	const events: AgentSessionEvent[] = [];
 	session.subscribe((event) => {

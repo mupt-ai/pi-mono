@@ -164,6 +164,19 @@ export interface SessionContext {
 	model: { provider: string; modelId: string } | null;
 }
 
+/**
+ * Serializable session history plus the current leaf pointer.
+ *
+ * This is the durable/log-shaped part of a session: the header, append-only
+ * entries, and which branch tip is currently active. Use it to move a session
+ * between processes or persist it outside the normal JSONL session file.
+ */
+export interface SessionLogSnapshot {
+	header: SessionHeader;
+	entries: SessionEntry[];
+	leafId?: string | null;
+}
+
 export interface SessionInfo {
 	path: string;
 	id: string;
@@ -1054,6 +1067,26 @@ export class SessionManager {
 	}
 
 	/**
+	 * Capture the current session log as a plain serializable snapshot.
+	 *
+	 * Unlike getEntries(), this also includes the session header and current
+	 * leaf pointer so another process can rebuild the same branch state later
+	 * via SessionManager.fromSnapshot().
+	 */
+	toSnapshot(): SessionLogSnapshot {
+		const header = this.getHeader();
+		if (!header) {
+			throw new Error("Session is missing a header");
+		}
+
+		return structuredClone({
+			header,
+			entries: this.getEntries(),
+			leafId: this.leafId,
+		});
+	}
+
+	/**
 	 * Get all session entries (excludes header). Returns a shallow copy.
 	 * The session is append-only: use appendXXX() to add entries, branch() to
 	 * change the leaf pointer. Entries cannot be modified or deleted.
@@ -1299,6 +1332,35 @@ export class SessionManager {
 	/** Create an in-memory session (no file persistence) */
 	static inMemory(cwd: string = process.cwd()): SessionManager {
 		return new SessionManager(cwd, "", undefined, false);
+	}
+
+	/**
+	 * Rebuild a SessionManager from a SessionLogSnapshot.
+	 *
+	 * This is the inverse of toSnapshot(): it restores the header, append-only
+	 * entries, and active leaf so callers can resume tree traversal, context
+	 * building, branching, and further appends. The restored manager is always
+	 * in memory. Use create(), open(), or continueRecent() for file-backed
+	 * session managers.
+	 */
+	static fromSnapshot(snapshot: SessionLogSnapshot): SessionManager {
+		const cwd = snapshot.header.cwd;
+		const manager = SessionManager.inMemory(cwd);
+		const header = structuredClone(snapshot.header);
+		const entries = structuredClone(snapshot.entries);
+		manager.sessionId = header.id;
+		manager.fileEntries = [header, ...entries];
+		migrateToCurrentVersion(manager.fileEntries);
+		manager._buildIndex();
+
+		if (snapshot.leafId !== undefined) {
+			if (snapshot.leafId !== null && !manager.byId.has(snapshot.leafId)) {
+				throw new Error(`Snapshot leaf ${snapshot.leafId} does not exist in the session entries`);
+			}
+			manager.leafId = snapshot.leafId;
+		}
+
+		return manager;
 	}
 
 	/**
