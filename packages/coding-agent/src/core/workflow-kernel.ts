@@ -79,6 +79,14 @@ export interface WorkflowSettingsSnapshot {
 	thinkingBudgets?: ThinkingBudgetsSettings;
 }
 
+/**
+ * Filesystem-agnostic runtime inputs required to rebuild a stepped workflow session.
+ *
+ * This snapshot intentionally contains configuration, prompts, skills, tool
+ * definitions, and other small runtime data, but not the append-only session
+ * history itself. Pair it with a SessionLogSnapshot to reconstruct a workflow
+ * step in another process.
+ */
 export interface WorkflowEnvironmentSnapshot {
 	cwd: string;
 	model?: Model<any>;
@@ -100,6 +108,7 @@ export type WorkflowCompactionRequest = SessionCompactionRequest;
 export type WorkflowPhase = SessionLoopPhase;
 export type WorkflowTerminalStatus = SessionLoopTerminalStatus;
 
+/** Prepared external compaction request emitted by `prepare_compaction`. */
 export interface PreparedCompactionRequest {
 	model: Model<any>;
 	reason: WorkflowCompactionRequest["reason"];
@@ -107,6 +116,14 @@ export interface PreparedCompactionRequest {
 	preparation: CompactionPreparation;
 }
 
+/**
+ * Serializable carry-state for the deterministic workflow loop.
+ *
+ * Hosts persist this between activities. `environment` and the separate
+ * SessionLogSnapshot are enough to rebuild an AgentSession, while the rest of
+ * the fields capture where the stepped loop is paused and any outstanding
+ * provider/tool/compaction work.
+ */
 export interface WorkflowState {
 	sessionId: string;
 	environment: WorkflowEnvironmentSnapshot;
@@ -230,6 +247,15 @@ function captureWorkflowSkills(session: AgentSession): WorkflowSkillSnapshot[] {
 	}));
 }
 
+/**
+ * Capture the non-durable runtime state needed to replay the coding loop in a
+ * filesystem-agnostic worker.
+ *
+ * The resulting snapshot contains prompt resources, active tools, settings,
+ * and other runtime configuration, but not the append-only conversation log.
+ * Pair it with captureSessionLogSnapshot() when moving a session into an
+ * external workflow engine.
+ */
 export function captureWorkflowEnvironmentSnapshot(
 	session: AgentSession,
 	options?: { providerExecutionMode?: ProviderExecutionMode },
@@ -252,6 +278,12 @@ export function captureWorkflowEnvironmentSnapshot(
 	};
 }
 
+/**
+ * Capture the append-only session log in a plain serializable form.
+ *
+ * This is a thin wrapper around SessionManager.toSnapshot() so workflow hosts
+ * can persist the conversation history alongside WorkflowState.
+ */
 export function captureSessionLogSnapshot(sessionManager: SessionManager): SessionLogSnapshot {
 	return sessionManager.toSnapshot();
 }
@@ -511,6 +543,13 @@ function createCompactionEvents(
 	];
 }
 
+/**
+ * Initialize a new workflow-state machine from input plus serialized runtime snapshots.
+ *
+ * This performs the same prompt-preparation/bootstrap work as a live
+ * AgentSession, but returns a plain WorkflowState that can be carried between
+ * deterministic workflow activities.
+ */
 export async function initializeWorkflowState(
 	input: string | AgentMessage | AgentMessage[],
 	environment: WorkflowEnvironmentSnapshot,
@@ -526,6 +565,15 @@ export async function initializeWorkflowState(
 	}
 }
 
+/**
+ * Advance the workflow by exactly one command.
+ *
+ * The caller supplies the carried WorkflowState plus the current SessionLogSnapshot.
+ * The result contains the next WorkflowState, any session persistence ops, and
+ * explicit external work to perform next (provider request, tool calls, or
+ * compaction). Hosts are responsible for executing that external work and then
+ * calling back into this function with the matching completion command.
+ */
 export async function stepWorkflowState(
 	state: WorkflowState,
 	sessionLog: SessionLogSnapshot,

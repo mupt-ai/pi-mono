@@ -164,6 +164,13 @@ export interface SessionContext {
 	model: { provider: string; modelId: string } | null;
 }
 
+/**
+ * Serializable session history plus the current leaf pointer.
+ *
+ * This is the durable/log-shaped part of a session: the header, append-only
+ * entries, and which branch tip is currently active. Use it to move a session
+ * between processes or persist it outside the normal JSONL session file.
+ */
 export interface SessionLogSnapshot {
 	header: SessionHeader;
 	entries: SessionEntry[];
@@ -1059,6 +1066,13 @@ export class SessionManager {
 		return h ? (h as SessionHeader) : null;
 	}
 
+	/**
+	 * Capture the current session log as a plain serializable snapshot.
+	 *
+	 * Unlike getEntries(), this also includes the session header and current
+	 * leaf pointer so another process can rebuild the same branch state later
+	 * via SessionManager.fromSnapshot().
+	 */
 	toSnapshot(): SessionLogSnapshot {
 		const header = this.getHeader();
 		if (!header) {
@@ -1320,6 +1334,15 @@ export class SessionManager {
 		return new SessionManager(cwd, "", undefined, false);
 	}
 
+	/**
+	 * Rebuild a SessionManager from a SessionLogSnapshot.
+	 *
+	 * This is the inverse of toSnapshot(): it restores the header, append-only
+	 * entries, and active leaf so callers can resume tree traversal, context
+	 * building, branching, and further appends. By default the restored manager
+	 * stays in memory; pass `persist: true` to attach it to an on-disk session
+	 * file again.
+	 */
 	static fromSnapshot(
 		snapshot: SessionLogSnapshot,
 		options?: {
