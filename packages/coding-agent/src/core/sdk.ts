@@ -39,6 +39,7 @@ import {
 	withFileMutationQueue,
 	writeTool,
 } from "./tools/index.js";
+import { markWorkflowSnapshotCompatibleAgent } from "./workflow-agent-compat.js";
 
 export interface CreateAgentSessionOptions {
 	/** Working directory for project-local discovery. Default: process.cwd() */
@@ -361,6 +362,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		sessionStartEvent: options.sessionStartEvent,
 		providerExecutionMode: options.providerExecutionMode,
 	});
+	markWorkflowSnapshotCompatibleAgent(session.agent);
 	const extensionsResult = resourceLoader.getExtensions();
 
 	return {

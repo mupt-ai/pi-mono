@@ -41,6 +41,10 @@ import type {
 import { SettingsManager } from "./settings-manager.js";
 import type { Skill } from "./skills.js";
 import type { SourceInfo } from "./source-info.js";
+import {
+	getWorkflowSnapshotUnsupportedDirectAgentHooks,
+	markWorkflowSnapshotCompatibleAgent,
+} from "./workflow-agent-compat.js";
 
 /** Serializable tool definition used by the external workflow runtime. */
 export interface WorkflowToolSnapshot {
@@ -219,6 +223,10 @@ function buildWorkflowSettingsSnapshot(settingsManager: SettingsManager): Workfl
 function assertWorkflowSnapshotSupported(session: AgentSession): void {
 	const runner = session.extensionRunner;
 	if (!runner) {
+		const unsupportedHooks = getWorkflowSnapshotUnsupportedDirectAgentHooks(session.agent);
+		if (unsupportedHooks.length > 0) {
+			throw new Error(`Workflow snapshots do not support custom direct Agent hooks: ${unsupportedHooks.join(", ")}`);
+		}
 		return;
 	}
 
@@ -236,6 +244,11 @@ function assertWorkflowSnapshotSupported(session: AgentSession): void {
 		throw new Error(
 			`Workflow snapshots do not support dynamic extension features: ${unsupportedFeatures.join(", ")}`,
 		);
+	}
+
+	const unsupportedHooks = getWorkflowSnapshotUnsupportedDirectAgentHooks(session.agent);
+	if (unsupportedHooks.length > 0) {
+		throw new Error(`Workflow snapshots do not support custom direct Agent hooks: ${unsupportedHooks.join(", ")}`);
 	}
 }
 
@@ -277,7 +290,8 @@ function captureWorkflowSkills(session: AgentSession): WorkflowSkillSnapshot[] {
  * and other runtime configuration, but not the append-only conversation log.
  * Pair it with captureSessionLogSnapshot() when moving a session into an
  * external workflow engine. Workflow snapshots always use external provider
- * execution.
+ * execution. This capture path supports sessions created by the coding-agent
+ * SDK/runtime and rejects unsupported direct Agent hook customizations.
  */
 export function captureWorkflowEnvironmentSnapshot(session: AgentSession): WorkflowEnvironmentSnapshot {
 	assertWorkflowSnapshotSupported(session);
@@ -437,7 +451,7 @@ function createWorkflowSession(environment: WorkflowEnvironmentSnapshot, session
 		agent.state.thinkingLevel = existingSession.thinkingLevel as ThinkingLevel;
 	}
 
-	return new AgentSession({
+	const session = new AgentSession({
 		agent,
 		sessionManager,
 		settingsManager,
@@ -449,6 +463,8 @@ function createWorkflowSession(environment: WorkflowEnvironmentSnapshot, session
 		providerExecutionMode: "external",
 		compactionExecutionMode: "external",
 	});
+	markWorkflowSnapshotCompatibleAgent(session.agent);
+	return session;
 }
 
 function expandWorkflowSkillCommand(text: string, skills: WorkflowSkillSnapshot[]): string {

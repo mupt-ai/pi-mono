@@ -255,4 +255,15 @@ describe("workflow kernel", () => {
 		]);
 		expect(result.sessionLog.entries.at(-1)?.type).toBe("compaction");
 	});
+
+	it("rejects sessions with unsupported direct Agent hook mutations", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+
+		harness.session.agent.beforeToolCall = async () => ({ block: true, reason: "skip" });
+
+		expect(() => captureWorkflowEnvironmentSnapshot(harness.session)).toThrow(
+			"Workflow snapshots do not support custom direct Agent hooks: beforeToolCall",
+		);
+	});
 });
