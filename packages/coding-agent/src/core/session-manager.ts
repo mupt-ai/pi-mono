@@ -1339,37 +1339,19 @@ export class SessionManager {
 	 *
 	 * This is the inverse of toSnapshot(): it restores the header, append-only
 	 * entries, and active leaf so callers can resume tree traversal, context
-	 * building, branching, and further appends. By default the restored manager
-	 * stays in memory; pass `persist: true` to attach it to an on-disk session
-	 * file again.
+	 * building, branching, and further appends. The restored manager is always
+	 * in memory. Use create(), open(), or continueRecent() for file-backed
+	 * session managers.
 	 */
-	static fromSnapshot(
-		snapshot: SessionLogSnapshot,
-		options?: {
-			persist?: boolean;
-			sessionDir?: string;
-			sessionFile?: string;
-		},
-	): SessionManager {
-		const persist = options?.persist ?? false;
+	static fromSnapshot(snapshot: SessionLogSnapshot): SessionManager {
 		const cwd = snapshot.header.cwd;
-		const sessionDir = persist ? (options?.sessionDir ?? getDefaultSessionDir(cwd)) : "";
-		const manager = new SessionManager(cwd, sessionDir, undefined, persist);
+		const manager = new SessionManager(cwd, "", undefined, false);
 		const header = structuredClone(snapshot.header);
 		const entries = structuredClone(snapshot.entries);
 		manager.sessionId = header.id;
-		manager.sessionFile = persist && options?.sessionFile ? resolve(options.sessionFile) : undefined;
 		manager.fileEntries = [header, ...entries];
-		if (migrateToCurrentVersion(manager.fileEntries)) {
-			manager._buildIndex();
-			if (persist) {
-				manager._rewriteFile();
-				manager.flushed = true;
-			}
-		} else {
-			manager._buildIndex();
-			manager.flushed = persist && manager.fileEntries.length > 0;
-		}
+		migrateToCurrentVersion(manager.fileEntries);
+		manager._buildIndex();
 
 		if (snapshot.leafId !== undefined) {
 			if (snapshot.leafId !== null && !manager.byId.has(snapshot.leafId)) {
