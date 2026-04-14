@@ -165,6 +165,8 @@ export {
 	type CreateAgentSessionRuntimeFactory,
 	type CreateAgentSessionRuntimeResult,
 	type CreateAgentSessionServicesOptions,
+	captureSessionLogSnapshot,
+	captureWorkflowEnvironmentSnapshot,
 	// Factory
 	createAgentSession,
 	createAgentSessionFromServices,
@@ -182,11 +184,13 @@ export {
 	createSessionStepRuntime,
 	createWriteTool,
 	initializeSessionLoopState,
+	initializeWorkflowState,
 	type PromptTemplate,
 	// Pre-built tools (use process.cwd())
 	readOnlyTools,
 	type SessionStepRuntime,
 	stepSessionLoop,
+	stepWorkflowState,
 } from "./core/sdk.js";
 export {
 	type BranchSummaryEntry,
@@ -207,6 +211,7 @@ export {
 	type SessionHeader,
 	type SessionInfo,
 	type SessionInfoEntry,
+	type SessionLogSnapshot,
 	SessionManager,
 	type SessionMessageEntry,
 	type ThinkingLevelChangeEntry,
@@ -306,6 +311,23 @@ export {
 	writeTool,
 	writeToolDefinition,
 } from "./core/tools/index.js";
+export type {
+	PreparedCompactionRequest,
+	WorkflowCompactionRequest,
+	WorkflowContextFileSnapshot,
+	WorkflowEnvironmentSnapshot,
+	WorkflowInput,
+	WorkflowPhase,
+	WorkflowQueueSnapshot,
+	WorkflowSettingsSnapshot,
+	WorkflowSkillSnapshot,
+	WorkflowState,
+	WorkflowStepCommand,
+	WorkflowStepNextAction,
+	WorkflowStepResult,
+	WorkflowTerminalStatus,
+	WorkflowToolSnapshot,
+} from "./core/workflow-kernel.js";
 // Main entry point
 export { main } from "./main.js";
 // Run modes for programmatic SDK usage

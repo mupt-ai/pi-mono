@@ -164,6 +164,12 @@ export interface SessionContext {
 	model: { provider: string; modelId: string } | null;
 }
 
+export interface SessionLogSnapshot {
+	header: SessionHeader;
+	entries: SessionEntry[];
+	leafId?: string | null;
+}
+
 export interface SessionInfo {
 	path: string;
 	id: string;
@@ -1053,6 +1059,19 @@ export class SessionManager {
 		return h ? (h as SessionHeader) : null;
 	}
 
+	toSnapshot(): SessionLogSnapshot {
+		const header = this.getHeader();
+		if (!header) {
+			throw new Error("Session is missing a header");
+		}
+
+		return structuredClone({
+			header,
+			entries: this.getEntries(),
+			leafId: this.leafId,
+		});
+	}
+
 	/**
 	 * Get all session entries (excludes header). Returns a shallow copy.
 	 * The session is append-only: use appendXXX() to add entries, branch() to
@@ -1299,6 +1318,44 @@ export class SessionManager {
 	/** Create an in-memory session (no file persistence) */
 	static inMemory(cwd: string = process.cwd()): SessionManager {
 		return new SessionManager(cwd, "", undefined, false);
+	}
+
+	static fromSnapshot(
+		snapshot: SessionLogSnapshot,
+		options?: {
+			persist?: boolean;
+			sessionDir?: string;
+			sessionFile?: string;
+		},
+	): SessionManager {
+		const persist = options?.persist ?? false;
+		const cwd = snapshot.header.cwd;
+		const sessionDir = persist ? (options?.sessionDir ?? getDefaultSessionDir(cwd)) : "";
+		const manager = new SessionManager(cwd, sessionDir, undefined, persist);
+		const header = structuredClone(snapshot.header);
+		const entries = structuredClone(snapshot.entries);
+		manager.sessionId = header.id;
+		manager.sessionFile = persist && options?.sessionFile ? resolve(options.sessionFile) : undefined;
+		manager.fileEntries = [header, ...entries];
+		if (migrateToCurrentVersion(manager.fileEntries)) {
+			manager._buildIndex();
+			if (persist) {
+				manager._rewriteFile();
+				manager.flushed = true;
+			}
+		} else {
+			manager._buildIndex();
+			manager.flushed = persist && manager.fileEntries.length > 0;
+		}
+
+		if (snapshot.leafId !== undefined) {
+			if (snapshot.leafId !== null && !manager.byId.has(snapshot.leafId)) {
+				throw new Error(`Snapshot leaf ${snapshot.leafId} does not exist in the session entries`);
+			}
+			manager.leafId = snapshot.leafId;
+		}
+
+		return manager;
 	}
 
 	/**

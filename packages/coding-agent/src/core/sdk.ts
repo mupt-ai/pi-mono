@@ -104,6 +104,7 @@ export type {
 export type { PromptTemplate } from "./prompt-templates.js";
 export type { Skill } from "./skills.js";
 export type { Tool } from "./tools/index.js";
+export * from "./workflow-kernel.js";
 
 export {
 	// Pre-built tools (use process.cwd())
