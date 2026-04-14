@@ -6,7 +6,6 @@ import {
 	type AgentMessage,
 	initializeLoopState,
 	type PreparedProviderRequest,
-	type ProviderExecutionMode,
 	type ThinkingLevel,
 	type ToolExecutionRequest,
 } from "@mupt-ai/pi-agent-core";
@@ -95,7 +94,6 @@ export interface WorkflowEnvironmentSnapshot {
 	cwd: string;
 	model?: Model<any>;
 	thinkingLevel?: ThinkingLevel;
-	providerExecutionMode?: ProviderExecutionMode;
 	activeToolNames: string[];
 	tools: WorkflowToolSnapshot[];
 	settings?: WorkflowSettingsSnapshot;
@@ -278,19 +276,16 @@ function captureWorkflowSkills(session: AgentSession): WorkflowSkillSnapshot[] {
  * The resulting snapshot contains prompt resources, active tools, settings,
  * and other runtime configuration, but not the append-only conversation log.
  * Pair it with captureSessionLogSnapshot() when moving a session into an
- * external workflow engine.
+ * external workflow engine. Workflow snapshots always use external provider
+ * execution.
  */
-export function captureWorkflowEnvironmentSnapshot(
-	session: AgentSession,
-	options?: { providerExecutionMode?: ProviderExecutionMode },
-): WorkflowEnvironmentSnapshot {
+export function captureWorkflowEnvironmentSnapshot(session: AgentSession): WorkflowEnvironmentSnapshot {
 	assertWorkflowSnapshotSupported(session);
 
 	return {
 		cwd: session.sessionManager.getCwd(),
 		model: session.model ? structuredClone(session.model) : undefined,
 		thinkingLevel: session.thinkingLevel,
-		providerExecutionMode: options?.providerExecutionMode ?? "external",
 		activeToolNames: session.getActiveToolNames(),
 		tools: captureWorkflowTools(session),
 		settings: buildWorkflowSettingsSnapshot(session.settingsManager),
@@ -451,7 +446,7 @@ function createWorkflowSession(environment: WorkflowEnvironmentSnapshot, session
 		resourceLoader: createWorkflowResourceLoader(environment),
 		initialActiveToolNames: environment.activeToolNames,
 		baseToolDefinitionsOverride: createWorkflowToolDefinitions(environment.tools),
-		providerExecutionMode: environment.providerExecutionMode ?? "external",
+		providerExecutionMode: "external",
 		compactionExecutionMode: "external",
 	});
 }
