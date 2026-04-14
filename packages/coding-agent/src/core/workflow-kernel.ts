@@ -43,6 +43,7 @@ import { SettingsManager } from "./settings-manager.js";
 import type { Skill } from "./skills.js";
 import type { SourceInfo } from "./source-info.js";
 
+/** Serializable tool definition used by the external workflow runtime. */
 export interface WorkflowToolSnapshot {
 	name: string;
 	label: string;
@@ -53,6 +54,7 @@ export interface WorkflowToolSnapshot {
 	prepareArguments?: (args: unknown) => unknown;
 }
 
+/** Serializable skill payload embedded into the workflow environment snapshot. */
 export interface WorkflowSkillSnapshot {
 	name: string;
 	description: string;
@@ -63,11 +65,13 @@ export interface WorkflowSkillSnapshot {
 	disableModelInvocation: boolean;
 }
 
+/** Serializable `AGENTS.md`/context file content needed by the rebuilt session. */
 export interface WorkflowContextFileSnapshot {
 	path: string;
 	content: string;
 }
 
+/** Serializable subset of SettingsManager state required to rebuild the loop. */
 export interface WorkflowSettingsSnapshot {
 	transport?: Transport;
 	steeringMode?: "all" | "one-at-a-time";
@@ -102,10 +106,15 @@ export interface WorkflowEnvironmentSnapshot {
 	agentsFiles?: WorkflowContextFileSnapshot[];
 }
 
+/** Input payload understood by the stepped workflow loop. */
 export type WorkflowInput = SessionLoopInput;
+/** Snapshot of queued steering/follow-up work carried between steps. */
 export type WorkflowQueueSnapshot = SessionQueueSnapshot;
+/** Pending compaction request emitted by the core stepped loop. */
 export type WorkflowCompactionRequest = SessionCompactionRequest;
+/** High-level workflow phase mirrored from the core session loop. */
 export type WorkflowPhase = SessionLoopPhase;
+/** Terminal status of the stepped workflow loop. */
 export type WorkflowTerminalStatus = SessionLoopTerminalStatus;
 
 /** Prepared external compaction request emitted by `prepare_compaction`. */
@@ -144,16 +153,31 @@ export interface WorkflowState {
 
 type WorkflowDelegatedCommand = Exclude<SessionStepCommand, { type: "run_compaction" }>;
 
+/**
+ * One-step command accepted by `stepWorkflowState()`.
+ *
+ * Most commands are delegated directly to the core stepped loop. Compaction is
+ * split into `prepare_compaction` and `complete_compaction` so hosts can run
+ * the actual compaction model call outside the workflow kernel.
+ */
 export type WorkflowStepCommand =
 	| WorkflowDelegatedCommand
 	| { type: "prepare_compaction" }
 	| { type: "complete_compaction"; result: CompactionResult<unknown>; fromExtension?: boolean };
 
+/** Next action the host should perform after a workflow step completes. */
 export type WorkflowStepNextAction =
 	| Exclude<SessionStepResult["nextAction"], "run_compaction">
 	| "prepare_compaction"
 	| "complete_compaction";
 
+/**
+ * Result of advancing the workflow by one step.
+ *
+ * Includes the updated carry-state, the rebuilt session log snapshot, any
+ * emitted session persistence ops, and explicit external work for the host to
+ * perform next.
+ */
 export interface WorkflowStepResult {
 	state: WorkflowState;
 	sessionLog: SessionLogSnapshot;
