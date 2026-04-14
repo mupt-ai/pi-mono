@@ -1345,7 +1345,7 @@ export class SessionManager {
 	 */
 	static fromSnapshot(snapshot: SessionLogSnapshot): SessionManager {
 		const cwd = snapshot.header.cwd;
-		const manager = new SessionManager(cwd, "", undefined, false);
+		const manager = SessionManager.inMemory(cwd);
 		const header = structuredClone(snapshot.header);
 		const entries = structuredClone(snapshot.entries);
 		manager.sessionId = header.id;
