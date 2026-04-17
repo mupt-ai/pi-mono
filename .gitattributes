@@ -9,6 +9,10 @@
 # Shell scripts should keep LF
 *.sh text eol=lf
 
+# Always resolve package-lock.json to our version on merge, then regenerate.
+# Requires `git config merge.ours.driver true` once per clone.
+package-lock.json merge=ours
+
 # Common binary assets
 *.png binary
 *.jpg binary
