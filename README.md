@@ -1,11 +1,3 @@
-<!-- OSS_WEEKEND_START -->
-# 🏖️ OSS Weekend
-
-**Issue tracker reopens Monday, April 20, 2026.**
-
-OSS weekend runs Monday, April 13, 2026 through Monday, April 20, 2026. New issues and PRs from unapproved contributors are auto-closed during this time. Approved contributors can still open issues and PRs if something is genuinely urgent, but please keep that to pressing matters only. For support, join [Discord](https://discord.com/invite/3cU7Bz4UPx).
-<!-- OSS_WEEKEND_END -->
-
 # Distributed pi
 
 This repo is a fork of [badlogic/pi-mono](https://github.com/badlogic/pi-mono). For the original project overview, package docs, installation, and standard workflow, see the upstream [README](https://github.com/badlogic/pi-mono/blob/main/README.md).
