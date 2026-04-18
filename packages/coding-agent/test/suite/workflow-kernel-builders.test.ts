@@ -61,6 +61,11 @@ describe("buildWorkflowEnvironmentSnapshot", () => {
 		expect(snapshot.settings).toBeUndefined();
 	});
 
+	it("omits systemPrompt when not provided so callers can fall back to pi defaults", () => {
+		const snapshot = buildWorkflowEnvironmentSnapshot({});
+		expect(snapshot.systemPrompt).toBeUndefined();
+	});
+
 	it("resolves builtin tools by string name", () => {
 		const snapshot = buildWorkflowEnvironmentSnapshot({
 			systemPrompt: "s",

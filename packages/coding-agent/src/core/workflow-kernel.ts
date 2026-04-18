@@ -135,7 +135,8 @@ export interface BuildWorkflowPromptTemplateInput {
 
 /** Input config for the pure `buildWorkflowEnvironmentSnapshot` builder. */
 export interface BuildWorkflowEnvironmentSnapshotInput {
-	systemPrompt: string;
+	/** Base system prompt. Omit to fall back to pi's default coding-agent prompt when the snapshot is rebuilt. */
+	systemPrompt?: string;
 	builtinTools?: (ToolName | Tool)[];
 	customTools?: WorkflowToolSnapshot[];
 	skills?: BuildWorkflowSkillInput[];
