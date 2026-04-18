@@ -78,6 +78,7 @@ export interface Skill {
 	baseDir: string;
 	sourceInfo: SourceInfo;
 	disableModelInvocation: boolean;
+	content?: string;
 }
 
 export interface LoadSkillsResult {
@@ -346,7 +347,7 @@ export function formatSkillsForPrompt(skills: Skill[]): string {
 	const lines = [
 		"\n\nThe following skills provide specialized instructions for specific tasks.",
 		"Use the read tool to load a skill's file when the task matches its description.",
-		"When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.",
+		"When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that resolved workspace/sandbox path in tool commands.",
 		"",
 		"<available_skills>",
 	];
