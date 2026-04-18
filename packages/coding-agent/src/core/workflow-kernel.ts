@@ -276,7 +276,7 @@ function captureWorkflowSkills(session: AgentSession): WorkflowSkillSnapshot[] {
 		description: skill.description,
 		location: skill.filePath,
 		baseDir: skill.baseDir,
-		content: stripFrontmatter(readFileSync(skill.filePath, "utf-8")).trim(),
+		content: skill.content ?? stripFrontmatter(readFileSync(skill.filePath, "utf-8")).trim(),
 		sourceInfo: structuredClone(skill.sourceInfo),
 		disableModelInvocation: skill.disableModelInvocation,
 	}));
@@ -330,6 +330,7 @@ function createWorkflowResourceLoader(environment: WorkflowEnvironmentSnapshot):
 		baseDir: skill.baseDir,
 		sourceInfo: structuredClone(skill.sourceInfo),
 		disableModelInvocation: skill.disableModelInvocation,
+		content: skill.content,
 	}));
 	const prompts = structuredClone(environment.promptTemplates ?? []);
 	const agentsFiles = structuredClone(environment.agentsFiles ?? []);

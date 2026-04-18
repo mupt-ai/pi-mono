@@ -14,6 +14,7 @@ function createTestSkill(options: {
 	filePath: string;
 	baseDir: string;
 	disableModelInvocation?: boolean;
+	content?: string;
 	source?: string;
 }): Skill {
 	return {
@@ -23,6 +24,7 @@ function createTestSkill(options: {
 		baseDir: options.baseDir,
 		sourceInfo: createSyntheticSourceInfo(options.filePath, { source: options.source ?? "test" }),
 		disableModelInvocation: options.disableModelInvocation ?? false,
+		content: options.content,
 	};
 }
 
@@ -263,6 +265,7 @@ describe("skills", () => {
 
 			expect(introText).toContain("The following skills provide specialized instructions");
 			expect(introText).toContain("Use the read tool to load a skill's file");
+			expect(introText).toContain("use that resolved workspace/sandbox path in tool commands");
 		});
 
 		it("should escape XML special characters", () => {
@@ -327,6 +330,23 @@ describe("skills", () => {
 			expect(result).toContain("<name>visible-skill</name>");
 			expect(result).not.toContain("<name>hidden-skill</name>");
 			expect((result.match(/<skill>/g) || []).length).toBe(1);
+		});
+
+		it("should not include inline skill content in the prompt catalog", () => {
+			const skills: Skill[] = [
+				createTestSkill({
+					name: "inline-skill",
+					description: "An injected skill.",
+					filePath: ".dari/agent-resources/source-bundle/skills/inline-skill/SKILL.md",
+					baseDir: ".dari/agent-resources/source-bundle/skills/inline-skill",
+					content: "This body should only appear on /skill invocation.",
+				}),
+			];
+
+			const result = formatSkillsForPrompt(skills);
+
+			expect(result).toContain("<name>inline-skill</name>");
+			expect(result).not.toContain("This body should only appear on /skill invocation.");
 		});
 
 		it("should return empty string when all skills have disableModelInvocation", () => {

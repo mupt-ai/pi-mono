@@ -1,6 +1,7 @@
 import type { AgentTool, NormalizedAssistantMessageEvent } from "@mupt-ai/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { afterEach, describe, expect, it } from "vitest";
+import { createSyntheticSourceInfo } from "../../src/core/source-info.js";
 import {
 	captureSessionLogSnapshot,
 	captureWorkflowEnvironmentSnapshot,
@@ -8,7 +9,7 @@ import {
 	stepWorkflowState,
 	type WorkflowState,
 } from "../../src/index.js";
-import { assistantMsg, userMsg } from "../utilities.js";
+import { assistantMsg, createTestResourceLoader, userMsg } from "../utilities.js";
 import { createHarness, getAssistantTexts, getUserTexts, type Harness } from "./harness.js";
 
 function createUsage() {
@@ -265,5 +266,61 @@ describe("workflow kernel", () => {
 		expect(() => captureWorkflowEnvironmentSnapshot(harness.session)).toThrow(
 			"Workflow snapshots do not support custom direct Agent hooks: beforeToolCall",
 		);
+	});
+
+	it("captures and rehydrates inline skill content in workflow snapshots", async () => {
+		const skillPath = ".dari/agent-resources/source-bundle/skills/review/SKILL.md";
+		const harness = await createHarness({
+			resourceLoader: {
+				...createTestResourceLoader(),
+				getSkills: () => ({
+					skills: [
+						{
+							name: "review",
+							description: "Review code changes.",
+							filePath: skillPath,
+							baseDir: ".dari/agent-resources/source-bundle/skills/review",
+							sourceInfo: createSyntheticSourceInfo(skillPath, {
+								source: "managed",
+								scope: "temporary",
+								origin: "top-level",
+								baseDir: ".dari/agent-resources/source-bundle/skills/review",
+							}),
+							disableModelInvocation: false,
+							content: "Use checklist.md before you summarize.",
+						},
+					],
+					diagnostics: [],
+				}),
+			},
+		});
+		harnesses.push(harness);
+
+		const environment = captureWorkflowEnvironmentSnapshot(harness.session);
+		expect(environment.skills).toEqual([
+			expect.objectContaining({
+				name: "review",
+				location: skillPath,
+				baseDir: ".dari/agent-resources/source-bundle/skills/review",
+				content: "Use checklist.md before you summarize.",
+			}),
+		]);
+
+		const state = await initializeWorkflowState(
+			"/skill:review explain this patch",
+			environment,
+			captureSessionLogSnapshot(harness.sessionManager),
+		);
+		const prepared = await stepWorkflowState(state, captureSessionLogSnapshot(harness.sessionManager), {
+			type: "prepare_prompt",
+		});
+		expect(prepared.state.input.kind).toBe("text");
+		if (prepared.state.input.kind !== "text") {
+			throw new Error(`expected text input, got ${prepared.state.input.kind}`);
+		}
+		expect(prepared.state.input.text).toContain(
+			'<skill name="review" location=".dari/agent-resources/source-bundle/skills/review/SKILL.md">',
+		);
+		expect(prepared.state.input.text).toContain("Use checklist.md before you summarize.");
 	});
 });

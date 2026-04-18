@@ -190,6 +190,49 @@ describe("AgentSession prompt characterization", () => {
 		expect(expandedPrompt).toContain("explain this");
 	});
 
+	it("expands inline skill content without reading from disk", async () => {
+		const skillPath = ".dari/agent-resources/source-bundle/skills/test/SKILL.md";
+		const resourceLoader = {
+			...createTestResourceLoader(),
+			getSkills: () => ({
+				skills: [
+					{
+						name: "test",
+						description: "Test skill",
+						filePath: skillPath,
+						disableModelInvocation: false,
+						baseDir: ".dari/agent-resources/source-bundle/skills/test",
+						sourceInfo: createSyntheticSourceInfo(skillPath, {
+							source: "managed",
+							scope: "temporary",
+							origin: "top-level",
+							baseDir: ".dari/agent-resources/source-bundle/skills/test",
+						}),
+						content: "Use the injected body.",
+					},
+				],
+				diagnostics: [],
+			}),
+		};
+		const harness = await createHarness({ resourceLoader });
+		harnesses.push(harness);
+		let expandedPrompt = "";
+
+		harness.setResponses([
+			(context) => {
+				const user = context.messages.find((message) => message.role === "user");
+				expandedPrompt = user ? getMessageText(user) : "";
+				return fauxAssistantMessage("ok");
+			},
+		]);
+
+		await harness.session.prompt("/skill:test explain this");
+
+		expect(expandedPrompt).toContain(`<skill name="test" location="${skillPath}">`);
+		expect(expandedPrompt).toContain("Use the injected body.");
+		expect(expandedPrompt).toContain("explain this");
+	});
+
 	it("expands prompt templates before sending the prompt", async () => {
 		const template: PromptTemplate = {
 			name: "review",
