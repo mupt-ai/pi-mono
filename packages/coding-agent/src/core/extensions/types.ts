@@ -31,7 +31,13 @@ import type {
 	OverlayOptions,
 	TUI,
 } from "@mariozechner/pi-tui";
-import type { AgentMessage, AgentToolResult, AgentToolUpdateCallback, ThinkingLevel } from "@mupt-ai/pi-agent-core";
+import type {
+	AgentMessage,
+	AgentToolResult,
+	AgentToolUpdateCallback,
+	ThinkingLevel,
+	ToolExecutionMode,
+} from "@mupt-ai/pi-agent-core";
 import type { Static, TSchema } from "@sinclair/typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { BashResult } from "../bash-executor.js";
@@ -69,7 +75,7 @@ import type {
 } from "../tools/index.js";
 
 export type { ExecOptions, ExecResult } from "../exec.js";
-export type { AgentToolResult, AgentToolUpdateCallback };
+export type { AgentToolResult, AgentToolUpdateCallback, ToolExecutionMode };
 export type { AppKeybinding, KeybindingsManager } from "../keybindings.js";
 
 // ============================================================================
@@ -379,6 +385,15 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 
 	/** Optional compatibility shim to prepare raw tool call arguments before schema validation. Must return an object conforming to TParams. */
 	prepareArguments?: (args: unknown) => Static<TParams>;
+
+	/**
+	 * Per-tool execution mode override.
+	 * - "sequential": this tool must execute one at a time with other tool calls.
+	 * - "parallel": this tool can execute concurrently with other tool calls.
+	 *
+	 * If omitted, the default execution mode applies.
+	 */
+	executionMode?: ToolExecutionMode;
 
 	/** Execute the tool. */
 	execute(

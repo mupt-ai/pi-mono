@@ -1,6 +1,8 @@
+import { EventEmitter } from "node:events";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
+import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DefaultPackageManager, type ProgressEvent, type ResolvedResource } from "../src/core/package-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
@@ -11,6 +13,16 @@ function normalizeForMatch(value: string): string {
 
 function pathEndsWith(actualPath: string, suffix: string): boolean {
 	return normalizeForMatch(actualPath).endsWith(normalizeForMatch(suffix));
+}
+
+class MockSpawnedProcess extends EventEmitter {
+	stdout = new PassThrough();
+	stderr = new PassThrough();
+
+	kill(): boolean {
+		this.emit("close", null, "SIGTERM");
+		return true;
+	}
 }
 
 // Helper to check if a resource is enabled
@@ -872,6 +884,33 @@ Content`,
 			expect(result.skills.some((r) => isEnabled(r, "good-skill", "includes"))).toBe(true);
 			expect(result.skills.some((r) => r.path.includes("bad-skill"))).toBe(false);
 		});
+
+		it("should expand positive glob manifest entries before collecting skills", async () => {
+			const pkgDir = join(tempDir, "skill-manifest-glob-pkg");
+			mkdirSync(join(pkgDir, "plugins/pdf-to-markdown/skills/pdf-to-markdown"), { recursive: true });
+			mkdirSync(join(pkgDir, "plugins/nutrient-dws/skills/document-processor-api"), { recursive: true });
+			writeFileSync(
+				join(pkgDir, "plugins/pdf-to-markdown/skills/pdf-to-markdown", "SKILL.md"),
+				"---\nname: pdf-to-markdown\ndescription: PDF to Markdown\n---\nContent",
+			);
+			writeFileSync(
+				join(pkgDir, "plugins/nutrient-dws/skills/document-processor-api", "SKILL.md"),
+				"---\nname: document-processor-api\ndescription: DWS\n---\nContent",
+			);
+			writeFileSync(
+				join(pkgDir, "package.json"),
+				JSON.stringify({
+					name: "skill-manifest-glob-pkg",
+					pi: {
+						skills: ["./plugins/*/skills"],
+					},
+				}),
+			);
+
+			const result = await packageManager.resolveExtensionSources([pkgDir]);
+			expect(result.skills.some((r) => isEnabled(r, "pdf-to-markdown", "includes"))).toBe(true);
+			expect(result.skills.some((r) => isEnabled(r, "document-processor-api", "includes"))).toBe(true);
+		});
 	});
 
 	describe("pattern filtering in package filters", () => {
@@ -1552,6 +1591,39 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 				["exec", "node@20", "--", "npm", "view", "@scope/pkg", "version", "--json"],
 				expect.objectContaining({ cwd: tempDir }),
 			);
+		});
+
+		it("should wait for close before resolving captured stdout", async () => {
+			const managerWithInternals = packageManager as unknown as {
+				spawnCaptureCommand(
+					command: string,
+					args: string[],
+					options?: { cwd?: string; env?: Record<string, string> },
+				): MockSpawnedProcess;
+				runCommandCapture(
+					command: string,
+					args: string[],
+					options?: { cwd?: string; timeoutMs?: number; env?: Record<string, string> },
+				): Promise<string>;
+			};
+			const child = new MockSpawnedProcess();
+			vi.spyOn(managerWithInternals, "spawnCaptureCommand").mockReturnValue(child);
+
+			let settled = false;
+			const capturePromise = managerWithInternals.runCommandCapture("git", ["rev-parse", "HEAD"]).then((value) => {
+				settled = true;
+				return value;
+			});
+
+			child.emit("exit", 0, null);
+			await Promise.resolve();
+			expect(settled).toBe(false);
+
+			child.stdout.write("abc123\n");
+			child.stdout.end();
+			child.emit("close", 0, null);
+
+			await expect(capturePromise).resolves.toBe("abc123");
 		});
 	});
 });
