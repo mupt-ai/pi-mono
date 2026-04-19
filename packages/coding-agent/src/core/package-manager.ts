@@ -1,8 +1,10 @@
-import { spawn, spawnSync } from "node:child_process";
+import { type ChildProcess, type ChildProcessByStdio, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import type { Readable } from "node:stream";
+import { globSync } from "glob";
 import ignore from "ignore";
 import { minimatch } from "minimatch";
 import { CONFIG_DIR_NAME } from "../config.js";
@@ -212,6 +214,14 @@ function addIgnoreRules(ig: IgnoreMatcher, dir: string, rootDir: string): void {
 
 function isPattern(s: string): boolean {
 	return s.startsWith("!") || s.startsWith("+") || s.startsWith("-") || s.includes("*") || s.includes("?");
+}
+
+function isOverridePattern(s: string): boolean {
+	return s.startsWith("!") || s.startsWith("+") || s.startsWith("-");
+}
+
+function hasGlobPattern(s: string): boolean {
+	return s.includes("*") || s.includes("?");
 }
 
 function splitPatterns(entries: string[]): { plain: string[]; patterns: string[] } {
@@ -1896,7 +1906,7 @@ export class DefaultPackageManager implements PackageManager {
 		const entries = manifest?.[resourceType as keyof PiManifest];
 		if (entries && entries.length > 0) {
 			const allFiles = this.collectFilesFromManifestEntries(entries, packageRoot, resourceType);
-			const manifestPatterns = entries.filter(isPattern);
+			const manifestPatterns = entries.filter(isOverridePattern);
 			const enabledByManifest =
 				manifestPatterns.length > 0 ? applyPatterns(allFiles, manifestPatterns, packageRoot) : new Set(allFiles);
 			return { allFiles: Array.from(enabledByManifest), enabledByManifest };
@@ -1935,7 +1945,7 @@ export class DefaultPackageManager implements PackageManager {
 		if (!entries) return;
 
 		const allFiles = this.collectFilesFromManifestEntries(entries, root, resourceType);
-		const patterns = entries.filter(isPattern);
+		const patterns = entries.filter(isOverridePattern);
 		const enabledPaths = applyPatterns(allFiles, patterns, root);
 
 		for (const f of allFiles) {
@@ -1946,8 +1956,19 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private collectFilesFromManifestEntries(entries: string[], root: string, resourceType: ResourceType): string[] {
-		const plain = entries.filter((entry) => !isPattern(entry));
-		const resolved = plain.map((entry) => resolve(root, entry));
+		const sourceEntries = entries.filter((entry) => !isOverridePattern(entry));
+		const resolved = sourceEntries.flatMap((entry) => {
+			if (!hasGlobPattern(entry)) {
+				return [resolve(root, entry)];
+			}
+
+			return globSync(entry, {
+				cwd: root,
+				absolute: true,
+				dot: false,
+				nodir: false,
+			}).map((match) => resolve(match));
+		});
 		return this.collectFilesFromPaths(resolved, resourceType);
 	}
 
@@ -2177,18 +2198,34 @@ export class DefaultPackageManager implements PackageManager {
 		};
 	}
 
+	private spawnCommand(command: string, args: string[], options?: { cwd?: string }): ChildProcess {
+		return spawn(command, args, {
+			cwd: options?.cwd,
+			stdio: isStdoutTakenOver() ? ["ignore", 2, 2] : "inherit",
+			shell: process.platform === "win32",
+		});
+	}
+
+	private spawnCaptureCommand(
+		command: string,
+		args: string[],
+		options?: { cwd?: string; env?: Record<string, string> },
+	): ChildProcessByStdio<null, Readable, Readable> {
+		return spawn(command, args, {
+			cwd: options?.cwd,
+			stdio: ["ignore", "pipe", "pipe"],
+			shell: process.platform === "win32",
+			env: options?.env ? { ...process.env, ...options.env } : process.env,
+		});
+	}
+
 	private runCommandCapture(
 		command: string,
 		args: string[],
 		options?: { cwd?: string; timeoutMs?: number; env?: Record<string, string> },
 	): Promise<string> {
 		return new Promise((resolvePromise, reject) => {
-			const child = spawn(command, args, {
-				cwd: options?.cwd,
-				stdio: ["ignore", "pipe", "pipe"],
-				shell: process.platform === "win32",
-				env: options?.env ? { ...process.env, ...options.env } : process.env,
-			});
+			const child = this.spawnCaptureCommand(command, args, options);
 			let stdout = "";
 			let stderr = "";
 			let timedOut = false;
@@ -2206,11 +2243,11 @@ export class DefaultPackageManager implements PackageManager {
 			child.stderr?.on("data", (data) => {
 				stderr += data.toString();
 			});
-			child.on("error", (error) => {
+			child.once("error", (error) => {
 				if (timeout) clearTimeout(timeout);
 				reject(error);
 			});
-			child.on("exit", (code) => {
+			child.once("close", (code, signal) => {
 				if (timeout) clearTimeout(timeout);
 				if (timedOut) {
 					reject(new Error(`${command} ${args.join(" ")} timed out after ${options?.timeoutMs}ms`));
@@ -2220,18 +2257,15 @@ export class DefaultPackageManager implements PackageManager {
 					resolvePromise(stdout.trim());
 					return;
 				}
-				reject(new Error(`${command} ${args.join(" ")} failed with code ${code}: ${stderr || stdout}`));
+				const exitStatus = code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`;
+				reject(new Error(`${command} ${args.join(" ")} failed with ${exitStatus}: ${stderr || stdout}`));
 			});
 		});
 	}
 
 	private runCommand(command: string, args: string[], options?: { cwd?: string }): Promise<void> {
 		return new Promise((resolvePromise, reject) => {
-			const child = spawn(command, args, {
-				cwd: options?.cwd,
-				stdio: isStdoutTakenOver() ? ["ignore", 2, 2] : "inherit",
-				shell: process.platform === "win32",
-			});
+			const child = this.spawnCommand(command, args, options);
 			child.on("error", reject);
 			child.on("exit", (code) => {
 				if (code === 0) {
