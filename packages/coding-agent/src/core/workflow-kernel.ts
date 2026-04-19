@@ -120,8 +120,17 @@ export interface BuildWorkflowSkillInput {
 	description: string;
 	/** Frontmatter-stripped markdown body. Caller is responsible for reading the file. */
 	content: string;
-	location?: string;
-	baseDir?: string;
+	/**
+	 * Path the model sees as `<location>` in the system prompt AND that downstream tools
+	 * (e.g. the `read` tool, any file resolver) will hit when the model acts on the skill.
+	 * Must be a real path the runtime can resolve unless `disableModelInvocation` is true.
+	 */
+	location: string;
+	/**
+	 * Directory that relative paths inside the skill body resolve against. Must line up
+	 * with the runtime's filesystem view of the skill directory.
+	 */
+	baseDir: string;
 	disableModelInvocation?: boolean;
 }
 
@@ -434,23 +443,19 @@ export function buildWorkflowEnvironmentSnapshot(
 		seen.add(tool.name);
 	}
 
-	const skills: WorkflowSkillSnapshot[] = (config.skills ?? []).map((input) => {
-		const location = input.location ?? `<in-memory>/skills/${input.name}.md`;
-		const baseDir = input.baseDir ?? "<in-memory>";
-		return {
-			name: input.name,
-			description: input.description,
-			location,
-			baseDir,
-			content: input.content,
-			sourceInfo: createSyntheticSourceInfo(location, {
-				source: "in-memory",
-				scope: "temporary",
-				baseDir,
-			}),
-			disableModelInvocation: input.disableModelInvocation ?? false,
-		};
-	});
+	const skills: WorkflowSkillSnapshot[] = (config.skills ?? []).map((input) => ({
+		name: input.name,
+		description: input.description,
+		location: input.location,
+		baseDir: input.baseDir,
+		content: input.content,
+		sourceInfo: createSyntheticSourceInfo(input.location, {
+			source: "in-memory",
+			scope: "temporary",
+			baseDir: input.baseDir,
+		}),
+		disableModelInvocation: input.disableModelInvocation ?? false,
+	}));
 
 	const promptTemplates: PromptTemplate[] = (config.promptTemplates ?? []).map((input) => {
 		const filePath = `<in-memory>/prompts/${input.name}.md`;

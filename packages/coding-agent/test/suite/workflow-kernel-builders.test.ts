@@ -138,7 +138,7 @@ describe("buildWorkflowEnvironmentSnapshot", () => {
 		).toThrow(/Duplicate tool name/);
 	});
 
-	it("synthesizes skill sourceInfo and passes content through verbatim", () => {
+	it("passes caller-supplied skill location + baseDir through verbatim with synthesized sourceInfo", () => {
 		const snapshot = buildWorkflowEnvironmentSnapshot({
 			systemPrompt: "s",
 			skills: [
@@ -146,6 +146,8 @@ describe("buildWorkflowEnvironmentSnapshot", () => {
 					name: "my-skill",
 					description: "does a thing",
 					content: "body without frontmatter",
+					location: "/workspace/.skills/my-skill/SKILL.md",
+					baseDir: "/workspace/.skills/my-skill",
 				},
 			],
 		});
@@ -153,14 +155,15 @@ describe("buildWorkflowEnvironmentSnapshot", () => {
 		const skill = snapshot.skills![0];
 		expect(skill.name).toBe("my-skill");
 		expect(skill.content).toBe("body without frontmatter");
-		expect(skill.location).toBe("<in-memory>/skills/my-skill.md");
-		expect(skill.baseDir).toBe("<in-memory>");
+		expect(skill.location).toBe("/workspace/.skills/my-skill/SKILL.md");
+		expect(skill.baseDir).toBe("/workspace/.skills/my-skill");
 		expect(skill.sourceInfo.source).toBe("in-memory");
 		expect(skill.sourceInfo.scope).toBe("temporary");
+		expect(skill.sourceInfo.baseDir).toBe("/workspace/.skills/my-skill");
 		expect(skill.disableModelInvocation).toBe(false);
 	});
 
-	it("respects explicit skill location/baseDir", () => {
+	it("honors disableModelInvocation on skills", () => {
 		const snapshot = buildWorkflowEnvironmentSnapshot({
 			systemPrompt: "s",
 			skills: [
@@ -174,10 +177,7 @@ describe("buildWorkflowEnvironmentSnapshot", () => {
 				},
 			],
 		});
-		const skill = snapshot.skills![0];
-		expect(skill.location).toBe("/abs/s1.md");
-		expect(skill.baseDir).toBe("/abs");
-		expect(skill.disableModelInvocation).toBe(true);
+		expect(snapshot.skills![0].disableModelInvocation).toBe(true);
 	});
 
 	it("synthesizes prompt templates and keeps them usable by expandPromptTemplate", () => {
