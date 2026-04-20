@@ -5,6 +5,10 @@ export default defineConfig({
 	resolve: {
 		alias: [
 			{
+				find: "@mariozechner/pi-ai/env-api-keys",
+				replacement: fileURLToPath(new URL("../ai/src/env-api-keys.ts", import.meta.url)),
+			},
+			{
 				find: "@mariozechner/pi-ai/oauth",
 				replacement: fileURLToPath(new URL("../ai/src/oauth.ts", import.meta.url)),
 			},

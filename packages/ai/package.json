@@ -50,6 +50,10 @@
 			"types": "./dist/oauth.d.ts",
 			"import": "./dist/oauth.js"
 		},
+		"./env-api-keys": {
+			"types": "./dist/env-api-keys.d.ts",
+			"import": "./dist/env-api-keys.js"
+		},
 		"./bedrock-provider": {
 			"types": "./dist/bedrock-provider.d.ts",
 			"import": "./dist/bedrock-provider.js"
