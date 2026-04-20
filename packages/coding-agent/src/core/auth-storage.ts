@@ -7,12 +7,12 @@
  */
 
 import type { OAuthCredentials, OAuthLoginCallbacks, OAuthProviderId } from "@mariozechner/pi-ai";
+import { getEnvApiKey } from "@mariozechner/pi-ai/env-api-keys";
 import { getOAuthApiKey, getOAuthProvider, getOAuthProviders } from "@mariozechner/pi-ai/oauth";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { getAgentDir } from "../config.js";
-import { getEnvApiKey } from "./env-api-keys.js";
 import { resolveConfigValue } from "./resolve-config-value.js";
 
 export type ApiKeyCredential = {
