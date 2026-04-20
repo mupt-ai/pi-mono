@@ -6,17 +6,13 @@
  * try to refresh tokens simultaneously.
  */
 
-import {
-	getEnvApiKey,
-	type OAuthCredentials,
-	type OAuthLoginCallbacks,
-	type OAuthProviderId,
-} from "@mariozechner/pi-ai";
+import type { OAuthCredentials, OAuthLoginCallbacks, OAuthProviderId } from "@mariozechner/pi-ai";
 import { getOAuthApiKey, getOAuthProvider, getOAuthProviders } from "@mariozechner/pi-ai/oauth";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { getAgentDir } from "../config.js";
+import { getEnvApiKey } from "./env-api-keys.js";
 import { resolveConfigValue } from "./resolve-config-value.js";
 
 export type ApiKeyCredential = {
