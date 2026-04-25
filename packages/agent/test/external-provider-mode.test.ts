@@ -7,7 +7,7 @@ import {
 	type Model,
 	type UserMessage,
 } from "@mariozechner/pi-ai";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { agentLoop, initializeLoopState, stepLoop } from "../src/agent-loop.js";
 import type { NormalizedAssistantMessageEvent } from "../src/normalized-assistant-events.js";

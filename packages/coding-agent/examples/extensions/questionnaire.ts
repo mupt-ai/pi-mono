@@ -7,7 +7,7 @@
 
 import { Editor, type EditorTheme, Key, matchesKey, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import type { ExtensionAPI } from "@mupt-ai/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 // Types
 interface QuestionOption {

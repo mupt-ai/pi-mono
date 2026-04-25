@@ -1,35 +1,28 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
+const aiSrcIndex = fileURLToPath(new URL("../ai/src/index.ts", import.meta.url));
+const aiSrcOAuth = fileURLToPath(new URL("../ai/src/oauth.ts", import.meta.url));
+const agentSrcIndex = fileURLToPath(new URL("../agent/src/index.ts", import.meta.url));
+const tuiSrcIndex = fileURLToPath(new URL("../tui/src/index.ts", import.meta.url));
+
 export default defineConfig({
-	resolve: {
-		alias: [
-			{
-				find: "@mariozechner/pi-ai/oauth",
-				replacement: fileURLToPath(new URL("../ai/src/oauth.ts", import.meta.url)),
-			},
-			{
-				find: "@mupt-ai/pi-agent-core",
-				replacement: fileURLToPath(new URL("../agent/src/index.ts", import.meta.url)),
-			},
-			{
-				find: "@mariozechner/pi-ai",
-				replacement: fileURLToPath(new URL("../ai/src/index.ts", import.meta.url)),
-			},
-			{
-				find: "@mariozechner/pi-tui",
-				replacement: fileURLToPath(new URL("../tui/src/index.ts", import.meta.url)),
-			},
-		],
-	},
 	test: {
 		globals: true,
 		environment: "node",
-		testTimeout: 30000, // 30 seconds for API calls
+		testTimeout: 30000,
 		server: {
 			deps: {
 				external: [/@silvia-odwyer\/photon-node/],
 			},
 		},
+	},
+	resolve: {
+		alias: [
+			{ find: /^@mariozechner\/pi-ai$/, replacement: aiSrcIndex },
+			{ find: /^@mariozechner\/pi-ai\/oauth$/, replacement: aiSrcOAuth },
+			{ find: /^@mupt-ai\/pi-agent-core$/, replacement: agentSrcIndex },
+			{ find: /^@mariozechner\/pi-tui$/, replacement: tuiSrcIndex },
+		],
 	},
 });

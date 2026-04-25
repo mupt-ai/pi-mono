@@ -9,7 +9,7 @@ import {
 	type ThinkingLevel,
 	type ToolExecutionRequest,
 } from "@mupt-ai/pi-agent-core";
-import type { TSchema } from "@sinclair/typebox";
+import type { TSchema } from "typebox";
 import { stripFrontmatter } from "../utils/frontmatter.js";
 import { AgentSession, type AgentSessionEvent, type PromptOptions } from "./agent-session.js";
 import { AuthStorage } from "./auth-storage.js";
@@ -46,7 +46,7 @@ import type {
 import { SettingsManager } from "./settings-manager.js";
 import type { Skill } from "./skills.js";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.js";
-import { allToolDefinitions, type Tool, type ToolName } from "./tools/index.js";
+import { createAllToolDefinitions, type Tool, type ToolName } from "./tools/index.js";
 import {
 	getWorkflowSnapshotUnsupportedDirectAgentHooks,
 	markWorkflowSnapshotCompatibleAgent,
@@ -368,9 +368,10 @@ function cloneWorkflowToolSnapshot(snapshot: WorkflowToolSnapshot): WorkflowTool
 	};
 }
 
-function resolveBuiltinTool(entry: ToolName | Tool): WorkflowToolSnapshot {
+function resolveBuiltinTool(entry: ToolName | Tool, cwd: string): WorkflowToolSnapshot {
 	const name = typeof entry === "string" ? entry : entry.name;
-	const definition = (allToolDefinitions as unknown as Record<string, ToolDefinition | undefined>)[name];
+	const allDefs = createAllToolDefinitions(cwd) as unknown as Record<string, ToolDefinition | undefined>;
+	const definition = allDefs[name];
 	if (!definition) {
 		throw new Error(`Unknown builtin tool: ${name}`);
 	}
@@ -431,7 +432,8 @@ export function captureSessionLogSnapshot(sessionManager: SessionManager): Sessi
 export function buildWorkflowEnvironmentSnapshot(
 	config: BuildWorkflowEnvironmentSnapshotInput,
 ): WorkflowEnvironmentSnapshot {
-	const builtinTools = (config.builtinTools ?? []).map(resolveBuiltinTool);
+	const cwd = config.cwd ?? process.cwd();
+	const builtinTools = (config.builtinTools ?? []).map((entry) => resolveBuiltinTool(entry, cwd));
 	const customTools = (config.customTools ?? []).map(cloneWorkflowToolSnapshot);
 	const tools = [...builtinTools, ...customTools];
 
@@ -634,7 +636,7 @@ function createWorkflowSession(environment: WorkflowEnvironmentSnapshot, session
 		followUpMode: settingsManager.getFollowUpMode(),
 		transport: settingsManager.getTransport(),
 		thinkingBudgets: settingsManager.getThinkingBudgets(),
-		maxRetryDelayMs: settingsManager.getRetrySettings().maxDelayMs,
+		maxRetryDelayMs: settingsManager.getProviderRetrySettings().maxRetryDelayMs,
 	});
 
 	const existingSession = sessionManager.buildSessionContext();

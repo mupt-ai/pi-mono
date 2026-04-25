@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { PassThrough } from "node:stream";
@@ -315,6 +315,35 @@ Content`,
 				}
 			}
 		});
+
+		it("should dedupe user skill entries when ~/.pi/agent/skills is a symlink to ~/.agents/skills", async () => {
+			const previousHome = process.env.HOME;
+			process.env.HOME = tempDir;
+
+			try {
+				const agentSkillsDir = join(agentDir, "skills");
+				const agentsSkillsDir = join(tempDir, ".agents", "skills");
+				mkdirSync(agentsSkillsDir, { recursive: true });
+				// Use junction on Windows to avoid EPERM when symlink privileges are unavailable.
+				const directoryLinkType = process.platform === "win32" ? "junction" : "dir";
+				symlinkSync(agentsSkillsDir, agentSkillsDir, directoryLinkType);
+
+				const skillPath = join(agentsSkillsDir, "foo", "SKILL.md");
+				mkdirSync(join(agentsSkillsDir, "foo"), { recursive: true });
+				writeFileSync(skillPath, "---\nname: foo\ndescription: foo\n---\n");
+
+				const result = await packageManager.resolve();
+				const fooSkills = result.skills.filter((r) => pathEndsWith(r.path, "foo/SKILL.md"));
+
+				expect(fooSkills).toHaveLength(1);
+			} finally {
+				if (previousHome === undefined) {
+					delete process.env.HOME;
+				} else {
+					process.env.HOME = previousHome;
+				}
+			}
+		});
 	});
 
 	describe("ignore files", () => {
@@ -431,6 +460,20 @@ Content`,
 		});
 	});
 
+	describe("windows command spawning", () => {
+		it("should avoid the shell for git so Windows paths with spaces stay single arguments", () => {
+			vi.spyOn(process, "platform", "get").mockReturnValue("win32");
+			const managerWithInternals = packageManager as unknown as {
+				shouldUseWindowsShell(command: string): boolean;
+			};
+
+			expect(managerWithInternals.shouldUseWindowsShell("git")).toBe(false);
+			expect(managerWithInternals.shouldUseWindowsShell("npm")).toBe(true);
+			expect(managerWithInternals.shouldUseWindowsShell("pnpm")).toBe(true);
+			expect(managerWithInternals.shouldUseWindowsShell("C:/Program Files/nodejs/npm.cmd")).toBe(true);
+		});
+	});
+
 	describe("npmCommand", () => {
 		it("should use npmCommand argv for npm installs", async () => {
 			settingsManager = SettingsManager.inMemory({
@@ -471,6 +514,33 @@ Content`,
 			expect(runCommandSpy).toHaveBeenCalledWith("npm", ["install", "--omit=dev"], { cwd: targetDir });
 		});
 
+		it("should use plain install for git package dependencies when npmCommand is configured", async () => {
+			settingsManager = SettingsManager.inMemory({
+				npmCommand: ["pnpm"],
+			});
+			packageManager = new DefaultPackageManager({
+				cwd: tempDir,
+				agentDir,
+				settingsManager,
+			});
+
+			const source = "git:github.com/user/repo";
+			const targetDir = join(agentDir, "git", "github.com", "user", "repo");
+			const runCommandSpy = vi
+				.spyOn(packageManager as any, "runCommand")
+				.mockImplementation(async (...callArgs: unknown[]) => {
+					const [command, args] = callArgs as [string, string[]];
+					if (command === "git" && args[0] === "clone") {
+						mkdirSync(targetDir, { recursive: true });
+						writeFileSync(join(targetDir, "package.json"), JSON.stringify({ name: "repo", version: "1.0.0" }));
+					}
+				});
+
+			await packageManager.install(source);
+
+			expect(runCommandSpy).toHaveBeenCalledWith("pnpm", ["install"], { cwd: targetDir });
+		});
+
 		it("should update git package dependencies with --omit=dev", async () => {
 			const source = "git:github.com/user/repo";
 			const targetDir = join(tempDir, ".pi", "git", "github.com", "user", "repo");
@@ -496,6 +566,44 @@ Content`,
 			await packageManager.update(source);
 
 			expect(runCommandSpy).toHaveBeenCalledWith("npm", ["install", "--omit=dev"], { cwd: targetDir });
+		});
+
+		it("should use plain install through npmCommand argv when updating git package dependencies", async () => {
+			settingsManager = SettingsManager.inMemory({
+				npmCommand: ["mise", "exec", "node@20", "--", "pnpm"],
+			});
+			packageManager = new DefaultPackageManager({
+				cwd: tempDir,
+				agentDir,
+				settingsManager,
+			});
+
+			const source = "git:github.com/user/repo";
+			const targetDir = join(tempDir, ".pi", "git", "github.com", "user", "repo");
+			mkdirSync(targetDir, { recursive: true });
+			writeFileSync(join(targetDir, "package.json"), JSON.stringify({ name: "repo", version: "1.0.0" }));
+			settingsManager.setProjectPackages([source]);
+
+			vi.spyOn(packageManager as any, "runCommandCapture").mockImplementation(async (...callArgs: unknown[]) => {
+				const [_command, args] = callArgs as [string, string[]];
+				if (args[0] === "rev-parse" && args[1] === "--abbrev-ref" && args[2] === "@{upstream}") {
+					return "origin/main";
+				}
+				if (args[0] === "rev-parse" && args[1] === "@{upstream}") {
+					return "remote-head";
+				}
+				if (args[0] === "rev-parse" && args[1] === "HEAD") {
+					return "local-head";
+				}
+				throw new Error(`Unexpected runCommandCapture args: ${args.join(" ")}`);
+			});
+			const runCommandSpy = vi.spyOn(packageManager as any, "runCommand").mockResolvedValue(undefined);
+
+			await packageManager.update(source);
+
+			expect(runCommandSpy).toHaveBeenCalledWith("mise", ["exec", "node@20", "--", "pnpm", "install"], {
+				cwd: targetDir,
+			});
 		});
 
 		it("should use npmCommand argv for npm root lookup and invalidate cached root when npmCommand changes", () => {
@@ -1426,18 +1534,155 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 	});
 
 	describe("offline mode and network timeouts", () => {
-		it("should update project npm packages using @latest", async () => {
+		it("should update project npm packages using @latest when newer version is available", async () => {
+			const installedPath = join(tempDir, ".pi", "npm", "node_modules", "example");
+			mkdirSync(installedPath, { recursive: true });
+			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ name: "example", version: "1.0.0" }));
 			settingsManager.setProjectPackages(["npm:example"]);
 
+			const runCommandCaptureSpy = vi.spyOn(packageManager as any, "runCommandCapture").mockResolvedValue('"1.2.3"');
 			const runCommandSpy = vi.spyOn(packageManager as any, "runCommand").mockResolvedValue(undefined);
 
 			await packageManager.update("npm:example");
 
+			expect(runCommandCaptureSpy).toHaveBeenCalledWith(
+				"npm",
+				["view", "example", "version", "--json"],
+				expect.objectContaining({ cwd: tempDir, timeoutMs: expect.any(Number) }),
+			);
 			expect(runCommandSpy).toHaveBeenCalledWith(
 				"npm",
 				["install", "example@latest", "--prefix", join(tempDir, ".pi", "npm")],
 				undefined,
 			);
+		});
+
+		it("should skip project npm update when installed version matches latest", async () => {
+			const installedPath = join(tempDir, ".pi", "npm", "node_modules", "example");
+			mkdirSync(installedPath, { recursive: true });
+			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ name: "example", version: "1.2.3" }));
+			settingsManager.setProjectPackages(["npm:example"]);
+
+			const runCommandCaptureSpy = vi.spyOn(packageManager as any, "runCommandCapture").mockResolvedValue('"1.2.3"');
+			const runCommandSpy = vi.spyOn(packageManager as any, "runCommand").mockResolvedValue(undefined);
+
+			await packageManager.update("npm:example");
+
+			expect(runCommandCaptureSpy).toHaveBeenCalledWith(
+				"npm",
+				["view", "example", "version", "--json"],
+				expect.objectContaining({ cwd: tempDir, timeoutMs: expect.any(Number) }),
+			);
+			expect(runCommandSpy).not.toHaveBeenCalled();
+		});
+
+		it("should batch npm updates per scope and run git updates in parallel while skipping pinned and current packages", async () => {
+			vi.spyOn(packageManager as any, "getGlobalNpmRoot").mockReturnValue(join(agentDir, "node_modules"));
+
+			const userOldPath = join(agentDir, "node_modules", "user-old");
+			const userCurrentPath = join(agentDir, "node_modules", "user-current");
+			const userUnknownPath = join(agentDir, "node_modules", "user-unknown");
+			const projectOldPath = join(tempDir, ".pi", "npm", "node_modules", "project-old");
+			const projectCurrentPath = join(tempDir, ".pi", "npm", "node_modules", "project-current");
+			const installPaths = [userOldPath, userCurrentPath, userUnknownPath, projectOldPath, projectCurrentPath];
+			for (const installPath of installPaths) {
+				mkdirSync(installPath, { recursive: true });
+			}
+			writeFileSync(join(userOldPath, "package.json"), JSON.stringify({ name: "user-old", version: "1.0.0" }));
+			writeFileSync(
+				join(userCurrentPath, "package.json"),
+				JSON.stringify({ name: "user-current", version: "1.0.0" }),
+			);
+			writeFileSync(
+				join(userUnknownPath, "package.json"),
+				JSON.stringify({ name: "user-unknown", version: "1.0.0" }),
+			);
+			writeFileSync(join(projectOldPath, "package.json"), JSON.stringify({ name: "project-old", version: "1.0.0" }));
+			writeFileSync(
+				join(projectCurrentPath, "package.json"),
+				JSON.stringify({ name: "project-current", version: "1.0.0" }),
+			);
+
+			settingsManager.setPackages([
+				"npm:user-old",
+				"npm:user-current",
+				"npm:user-unknown",
+				"npm:user-pinned@1.0.0",
+				"git:github.com/example/user-repo-a",
+				"git:github.com/example/user-repo-b",
+				"git:github.com/example/user-repo-pinned@v1",
+			]);
+			settingsManager.setProjectPackages([
+				"npm:project-old",
+				"npm:project-current",
+				"npm:project-missing",
+				"git:github.com/example/project-repo-a",
+			]);
+
+			const runCommandCaptureSpy = vi
+				.spyOn(packageManager as any, "runCommandCapture")
+				.mockImplementation(async (...callArgs: unknown[]) => {
+					const [_command, args] = callArgs as [string, string[]];
+					if (args[0] !== "view") {
+						throw new Error(`Unexpected runCommandCapture args: ${args.join(" ")}`);
+					}
+					switch (args[1]) {
+						case "user-old":
+						case "project-old":
+							return '"2.0.0"';
+						case "user-current":
+						case "project-current":
+							return '"1.0.0"';
+						case "user-unknown":
+							throw new Error("registry unavailable");
+						default:
+							throw new Error(`Unexpected package lookup: ${args[1]}`);
+					}
+				});
+
+			let activeNpmUpdates = 0;
+			let maxConcurrentNpmUpdates = 0;
+			const runCommandSpy = vi
+				.spyOn(packageManager as any, "runCommand")
+				.mockImplementation(async (...callArgs: unknown[]) => {
+					const [command, args] = callArgs as [string, string[]];
+					if (command !== "npm") {
+						throw new Error(`Unexpected runCommand call: ${command} ${args.join(" ")}`);
+					}
+					activeNpmUpdates += 1;
+					maxConcurrentNpmUpdates = Math.max(maxConcurrentNpmUpdates, activeNpmUpdates);
+					await new Promise((resolve) => setTimeout(resolve, 20));
+					activeNpmUpdates -= 1;
+				});
+
+			let activeGitUpdates = 0;
+			let maxConcurrentGitUpdates = 0;
+			const updateGitSpy = vi.spyOn(packageManager as any, "updateGit").mockImplementation(async () => {
+				activeGitUpdates += 1;
+				maxConcurrentGitUpdates = Math.max(maxConcurrentGitUpdates, activeGitUpdates);
+				await new Promise((resolve) => setTimeout(resolve, 20));
+				activeGitUpdates -= 1;
+			});
+
+			await packageManager.update();
+
+			expect(runCommandCaptureSpy).toHaveBeenCalledTimes(5);
+			expect(runCommandSpy).toHaveBeenCalledTimes(2);
+			expect(runCommandSpy).toHaveBeenNthCalledWith(
+				1,
+				"npm",
+				["install", "-g", "user-old@latest", "user-unknown@latest"],
+				undefined,
+			);
+			expect(runCommandSpy).toHaveBeenNthCalledWith(
+				2,
+				"npm",
+				["install", "project-old@latest", "project-missing@latest", "--prefix", join(tempDir, ".pi", "npm")],
+				undefined,
+			);
+			expect(updateGitSpy).toHaveBeenCalledTimes(3);
+			expect(maxConcurrentNpmUpdates).toBeGreaterThan(1);
+			expect(maxConcurrentGitUpdates).toBeGreaterThan(1);
 		});
 
 		it("should suggest npm source prefixes for update lookups", async () => {

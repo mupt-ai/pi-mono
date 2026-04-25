@@ -21,7 +21,7 @@ import { StringEnum } from "@mariozechner/pi-ai";
 import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 import type { AgentToolResult } from "@mupt-ai/pi-agent-core";
 import { type ExtensionAPI, getMarkdownTheme, withFileMutationQueue } from "@mupt-ai/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.js";
 
 const MAX_PARALLEL_TASKS = 8;
