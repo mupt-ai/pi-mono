@@ -1,17 +1,21 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 import { expandPromptTemplate } from "../../src/core/prompt-templates.js";
 import {
-	bashTool,
-	bashToolDefinition,
 	buildWorkflowEnvironmentSnapshot,
 	CURRENT_SESSION_VERSION,
+	createBashTool,
+	createBashToolDefinition,
+	createReadToolDefinition,
 	emptySessionLogSnapshot,
 	initializeWorkflowState,
-	readToolDefinition,
 	SessionManager,
 	type WorkflowToolSnapshot,
 } from "../../src/index.js";
+
+const bashTool = createBashTool(process.cwd());
+const bashToolDefinition = createBashToolDefinition(process.cwd());
+const readToolDefinition = createReadToolDefinition(process.cwd());
 
 describe("emptySessionLogSnapshot", () => {
 	it("returns a valid empty snapshot with defaults", () => {

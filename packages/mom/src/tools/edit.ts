@@ -1,6 +1,6 @@
 import type { AgentTool } from "@mupt-ai/pi-agent-core";
-import { Type } from "@sinclair/typebox";
 import * as Diff from "diff";
+import { Type } from "typebox";
 import type { Executor } from "../sandbox.js";
 
 /**

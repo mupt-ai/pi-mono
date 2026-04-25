@@ -34,7 +34,23 @@ class ProxyMessageEventStream extends EventStream<AssistantMessageEvent, Assista
 
 export type ProxyAssistantMessageEvent = NormalizedAssistantMessageEvent;
 
-export interface ProxyStreamOptions extends SimpleStreamOptions {
+type ProxySerializableStreamOptions = Pick<
+	SimpleStreamOptions,
+	| "temperature"
+	| "maxTokens"
+	| "reasoning"
+	| "cacheRetention"
+	| "sessionId"
+	| "headers"
+	| "metadata"
+	| "transport"
+	| "thinkingBudgets"
+	| "maxRetryDelayMs"
+>;
+
+export interface ProxyStreamOptions extends ProxySerializableStreamOptions {
+	/** Local abort signal for the proxy request */
+	signal?: AbortSignal;
 	/** Auth token for the proxy server */
 	authToken: string;
 	/** Proxy server URL (e.g., "https://genai.example.com") */
@@ -60,6 +76,21 @@ export interface ProxyStreamOptions extends SimpleStreamOptions {
  * });
  * ```
  */
+function buildProxyRequestOptions(options: ProxyStreamOptions): ProxySerializableStreamOptions {
+	return {
+		temperature: options.temperature,
+		maxTokens: options.maxTokens,
+		reasoning: options.reasoning,
+		cacheRetention: options.cacheRetention,
+		sessionId: options.sessionId,
+		headers: options.headers,
+		metadata: options.metadata,
+		transport: options.transport,
+		thinkingBudgets: options.thinkingBudgets,
+		maxRetryDelayMs: options.maxRetryDelayMs,
+	};
+}
+
 export function streamProxy(model: Model<any>, context: Context, options: ProxyStreamOptions): ProxyMessageEventStream {
 	const stream = new ProxyMessageEventStream();
 
@@ -88,11 +119,7 @@ export function streamProxy(model: Model<any>, context: Context, options: ProxyS
 				body: JSON.stringify({
 					model,
 					context,
-					options: {
-						temperature: options.temperature,
-						maxTokens: options.maxTokens,
-						reasoning: options.reasoning,
-					},
+					options: buildProxyRequestOptions(options),
 				}),
 				signal: options.signal,
 			});

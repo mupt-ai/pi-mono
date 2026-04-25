@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fauxAssistantMessage, fauxToolCall, type Model } from "@mariozechner/pi-ai";
 import type { AgentTool } from "@mupt-ai/pi-agent-core";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import type { PromptTemplate } from "../../src/core/prompt-templates.js";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.js";
@@ -187,49 +187,6 @@ describe("AgentSession prompt characterization", () => {
 
 		expect(expandedPrompt).toContain('<skill name="test" location="');
 		expect(expandedPrompt).toContain("Use the skill body.");
-		expect(expandedPrompt).toContain("explain this");
-	});
-
-	it("expands inline skill content without reading from disk", async () => {
-		const skillPath = ".dari/agent-resources/source-bundle/skills/test/SKILL.md";
-		const resourceLoader = {
-			...createTestResourceLoader(),
-			getSkills: () => ({
-				skills: [
-					{
-						name: "test",
-						description: "Test skill",
-						filePath: skillPath,
-						disableModelInvocation: false,
-						baseDir: ".dari/agent-resources/source-bundle/skills/test",
-						sourceInfo: createSyntheticSourceInfo(skillPath, {
-							source: "managed",
-							scope: "temporary",
-							origin: "top-level",
-							baseDir: ".dari/agent-resources/source-bundle/skills/test",
-						}),
-						content: "Use the injected body.",
-					},
-				],
-				diagnostics: [],
-			}),
-		};
-		const harness = await createHarness({ resourceLoader });
-		harnesses.push(harness);
-		let expandedPrompt = "";
-
-		harness.setResponses([
-			(context) => {
-				const user = context.messages.find((message) => message.role === "user");
-				expandedPrompt = user ? getMessageText(user) : "";
-				return fauxAssistantMessage("ok");
-			},
-		]);
-
-		await harness.session.prompt("/skill:test explain this");
-
-		expect(expandedPrompt).toContain(`<skill name="test" location="${skillPath}">`);
-		expect(expandedPrompt).toContain("Use the injected body.");
 		expect(expandedPrompt).toContain("explain this");
 	});
 

@@ -25,10 +25,10 @@ import {
 	truncateHead,
 	withFileMutationQueue,
 } from "@mupt-ai/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
 import { execSync } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
+import { Type } from "typebox";
 
 const RgParams = Type.Object({
 	pattern: Type.String({ description: "Search pattern (regex)" }),
