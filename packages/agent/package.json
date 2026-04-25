@@ -1,5 +1,5 @@
 {
-	"name": "@mupt-ai/pi-agent-core",
+	"name": "@mariozechner/pi-agent-core",
 	"version": "0.68.4",
 	"description": "General-purpose agent with transport abstraction, state management, and attachment support",
 	"type": "module",
@@ -34,7 +34,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/mupt-ai/pi-mono.git",
+		"url": "git+https://github.com/badlogic/pi-mono.git",
 		"directory": "packages/agent"
 	},
 	"engines": {

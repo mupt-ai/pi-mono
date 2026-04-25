@@ -1,5 +1,5 @@
+import type { AgentTool, NormalizedAssistantMessageEvent } from "@mariozechner/pi-agent-core";
 import { fauxAssistantMessage } from "@mariozechner/pi-ai";
-import type { AgentTool, NormalizedAssistantMessageEvent } from "@mupt-ai/pi-agent-core";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHarness, getAssistantTexts, getUserTexts, type Harness } from "./harness.js";

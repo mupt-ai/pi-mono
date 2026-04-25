@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import type { AssistantMessage, Model, Transport } from "@mariozechner/pi-ai";
 import {
 	Agent,
 	type AgentEvent,
@@ -8,7 +7,8 @@ import {
 	type PreparedProviderRequest,
 	type ThinkingLevel,
 	type ToolExecutionRequest,
-} from "@mupt-ai/pi-agent-core";
+} from "@mariozechner/pi-agent-core";
+import type { AssistantMessage, Model, Transport } from "@mariozechner/pi-ai";
 import type { TSchema } from "typebox";
 import { stripFrontmatter } from "../utils/frontmatter.js";
 import { AgentSession, type AgentSessionEvent, type PromptOptions } from "./agent-session.js";

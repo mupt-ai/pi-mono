@@ -1,4 +1,3 @@
-import type { AssistantMessage, ImageContent } from "@mariozechner/pi-ai";
 import type {
 	AgentEvent,
 	AgentMessage,
@@ -7,7 +6,8 @@ import type {
 	NormalizedAssistantMessageEventSource,
 	PreparedProviderRequest,
 	ToolExecutionRequest,
-} from "@mupt-ai/pi-agent-core";
+} from "@mariozechner/pi-agent-core";
+import type { AssistantMessage, ImageContent } from "@mariozechner/pi-ai";
 import type { InputSource } from "./extensions/index.js";
 
 /**

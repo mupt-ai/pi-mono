@@ -5,8 +5,8 @@
 		"rootDir": "./src",
 		"paths": {
 			"*": ["./*"],
-			"@mupt-ai/pi-agent-core": ["../agent/dist/index.d.ts"],
-			"@mupt-ai/pi-agent-core/*": ["../agent/dist/*"]
+			"@mariozechner/pi-agent-core": ["../agent/dist/index.d.ts"],
+			"@mariozechner/pi-agent-core/*": ["../agent/dist/*"]
 		}
 	},
 	"include": ["src/**/*.ts"],

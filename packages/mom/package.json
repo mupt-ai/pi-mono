@@ -21,8 +21,8 @@
 	"dependencies": {
 		"@anthropic-ai/sandbox-runtime": "^0.0.16",
 		"@mariozechner/pi-ai": "^0.70.2",
-		"@mupt-ai/pi-agent-core": "^0.68.1",
-		"@mupt-ai/pi-coding-agent": "^0.68.1",
+		"@mariozechner/pi-agent-core": "^0.68.1",
+		"@mariozechner/pi-coding-agent": "^0.68.1",
 		"typebox": "^1.1.24",
 		"@slack/socket-mode": "^2.0.0",
 		"@slack/web-api": "^7.0.0",

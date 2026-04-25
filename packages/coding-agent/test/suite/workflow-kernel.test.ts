@@ -1,4 +1,4 @@
-import type { AgentTool, NormalizedAssistantMessageEvent } from "@mupt-ai/pi-agent-core";
+import type { AgentTool, NormalizedAssistantMessageEvent } from "@mariozechner/pi-agent-core";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.js";

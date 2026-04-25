@@ -18,8 +18,8 @@
  */
 
 import { StringEnum } from "@mariozechner/pi-ai";
+import type { ExtensionAPI, ExtensionContext, Theme, ToolExecutionMode } from "@mariozechner/pi-coding-agent";
 import { type Component, matchesKey, Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import type { ExtensionAPI, ExtensionContext, Theme, ToolExecutionMode } from "@mupt-ai/pi-coding-agent";
 import { Type } from "typebox";
 
 // Thrown from the tool on illegal actions. The agent runtime surfaces thrown

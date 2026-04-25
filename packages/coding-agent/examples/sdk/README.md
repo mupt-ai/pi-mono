@@ -43,7 +43,7 @@ import {
   codingTools,
   readOnlyTools,
   readTool, bashTool, editTool, writeTool,
-} from "@mupt-ai/pi-coding-agent";
+} from "@mariozechner/pi-coding-agent";
 
 // Auth and models setup
 const authStorage = AuthStorage.create();

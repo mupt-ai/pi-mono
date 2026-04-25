@@ -1,8 +1,8 @@
+import type { AgentMessage, AgentTool } from "@mariozechner/pi-agent-core";
 import type {
 	AssistantMessage as AssistantMessageType,
 	ToolResultMessage as ToolResultMessageType,
 } from "@mariozechner/pi-ai";
-import type { AgentMessage, AgentTool } from "@mupt-ai/pi-agent-core";
 import { html, LitElement, type TemplateResult } from "lit";
 import { property } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";

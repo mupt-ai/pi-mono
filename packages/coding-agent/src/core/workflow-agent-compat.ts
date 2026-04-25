@@ -1,4 +1,4 @@
-import { Agent } from "@mupt-ai/pi-agent-core";
+import { Agent } from "@mariozechner/pi-agent-core";
 
 type WorkflowCompatibleAgentHooks = {
 	convertToLlm: Agent["convertToLlm"];

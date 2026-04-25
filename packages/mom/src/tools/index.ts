@@ -1,4 +1,4 @@
-import type { AgentTool } from "@mupt-ai/pi-agent-core";
+import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { Executor } from "../sandbox.js";
 import { attachTool } from "./attach.js";
 import { createBashTool } from "./bash.js";
