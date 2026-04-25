@@ -211,6 +211,7 @@ export type ReadonlySessionManager = Pick<
 	| "getSessionName"
 >;
 
+/** Generate a fresh session id (UUIDv7 — time-ordered and sortable by creation). */
 export function createSessionId(): string {
 	return uuidv7();
 }

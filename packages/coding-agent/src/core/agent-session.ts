@@ -1160,6 +1160,14 @@ export class AgentSession {
 		};
 	}
 
+	/**
+	 * Build the initial `SessionLoopState` for a stepped run of this session.
+	 *
+	 * Snapshots the current steering/follow-up queues, retry counters, overflow-recovery
+	 * flag, and last assistant message so a host can drive the session loop one
+	 * `stepSessionLoop()` call at a time. The state starts in `"preparing_prompt"` —
+	 * the first step command should be `"prepare_prompt"`.
+	 */
 	async initializeSessionLoopState(
 		input: string | AgentMessage | AgentMessage[],
 		options?: PromptOptions,
@@ -1188,6 +1196,17 @@ export class AgentSession {
 		};
 	}
 
+	/**
+	 * Advance the session-level stepped loop by exactly one command.
+	 *
+	 * The supplied `state` is cloned before mutation; the AgentSession's mutable
+	 * fields (queues, retry counters, last assistant message) are temporarily
+	 * restored from it so each step is reproducible from carry-state alone.
+	 * The returned `SessionStepResult` carries the next state, agent/session
+	 * events, persistence operations the host must apply, and any external
+	 * work payload (provider request, tool calls, compaction trigger) the host
+	 * needs to resolve before the next call.
+	 */
 	async stepSessionLoop(
 		state: SessionLoopState,
 		command: SessionStepCommand,

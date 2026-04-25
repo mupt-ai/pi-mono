@@ -158,6 +158,15 @@ export async function runAgentLoopContinue(
 	return newMessages;
 }
 
+/**
+ * Build the initial `LoopState` for a stepped agent loop.
+ *
+ * `prompts` are appended to `context.messages` and tracked as both
+ * `newMessages` and `pendingPromptMessages` so the first step emits their
+ * `message_start`/`message_end` events. The state starts in
+ * `awaiting_assistant` with `firstTurn` set, ready for a `run_assistant_turn`
+ * command.
+ */
 export function initializeLoopState(
 	prompts: AgentMessage[],
 	context: AgentContext,
@@ -183,6 +192,19 @@ export function initializeLoopState(
 	};
 }
 
+/**
+ * Advance the stepped agent loop by exactly one command.
+ *
+ * The input `state` is cloned before mutation so the caller can keep the
+ * previous snapshot. The dispatched step routine emits agent events, applies
+ * them to the cloned state, and returns a `StepResult` with the next action
+ * the host should perform plus any external work payloads (provider request,
+ * tool calls, terminal messages).
+ *
+ * The legal `command.type` for each phase is enforced via `assertPhase()` in
+ * the dispatched step routines — passing a command that does not match the
+ * current phase throws.
+ */
 export async function stepLoop(
 	state: LoopState,
 	command: StepCommand,
@@ -795,6 +817,14 @@ async function runLoop(
 	await emit({ type: "agent_end", messages: newMessages });
 }
 
+/**
+ * Convert an `AgentContext` into a serializable provider request.
+ *
+ * Runs `transformContext` (if any), then `convertToLlm` to produce LLM-shaped
+ * messages, and bundles them with the model and prepared request options.
+ * Hosts use this when running provider calls externally — pair it with
+ * `applyAssistantProviderResponse()` to feed the streamed events back in.
+ */
 export async function prepareAssistantProviderRequest(
 	context: AgentContext,
 	config: AgentLoopConfig,
@@ -823,6 +853,18 @@ export async function prepareAssistantProviderRequest(
 	};
 }
 
+/**
+ * Reconstruct an `AssistantMessage` from a normalized provider event stream.
+ *
+ * Consumes `NormalizedAssistantMessageEvent`s, mutates `context.messages` in
+ * place to track the streaming partial, and emits `message_start`,
+ * `message_update`, and `message_end` events through `emit`. Returns the final
+ * message once a `done` or `error` terminal event arrives. Throws if the
+ * stream ends without a terminal event.
+ *
+ * `options.finalizeMessage` lets callers patch the reconstructed message
+ * before it's emitted — e.g. attaching usage data computed from raw payloads.
+ */
 export async function applyAssistantProviderResponse(
 	model: PreparedProviderRequest["model"],
 	events: NormalizedAssistantMessageEventSource,

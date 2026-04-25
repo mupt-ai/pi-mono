@@ -7,6 +7,14 @@ import {
 	type ToolCall,
 } from "@mariozechner/pi-ai";
 
+/**
+ * Provider-agnostic streaming event for an assistant message.
+ *
+ * Hosts that run provider calls externally serialize the underlying SDK
+ * stream into this normalized form, then feed it back into the agent loop.
+ * `contentIndex` identifies the content block (text, thinking, or toolCall)
+ * being updated. `done` and `error` are the only terminal event kinds.
+ */
 export type NormalizedAssistantMessageEvent =
 	| { type: "start" }
 	| { type: "text_start"; contentIndex: number }
@@ -30,15 +38,28 @@ export type NormalizedAssistantMessageEvent =
 			usage: AssistantMessage["usage"];
 	  };
 
+/** Either a sync or async iterable of normalized events. Accepted by the loop and apply helpers. */
 export type NormalizedAssistantMessageEventSource =
 	| Iterable<NormalizedAssistantMessageEvent>
 	| AsyncIterable<NormalizedAssistantMessageEvent>;
 
+/**
+ * In-progress reconstruction state for a normalized event stream.
+ *
+ * `message` is mutated as deltas arrive. `toolCallJson` accumulates raw JSON
+ * fragments per content index so streaming arguments can be parsed
+ * incrementally via `parseStreamingJson`.
+ */
 export interface NormalizedAssistantMessageState {
 	message: AssistantMessage;
 	toolCallJson: Map<number, string>;
 }
 
+/**
+ * Build an empty `NormalizedAssistantMessageState` seeded with model identity
+ * and zeroed usage/cost. Pass to `applyNormalizedAssistantMessageEvent` to
+ * accumulate a streaming response into a complete `AssistantMessage`.
+ */
 export function createNormalizedAssistantMessageState(model: Model<any>): NormalizedAssistantMessageState {
 	return {
 		message: {
@@ -62,6 +83,19 @@ export function createNormalizedAssistantMessageState(model: Model<any>): Normal
 	};
 }
 
+/**
+ * Apply one normalized event to the in-progress reconstruction state and
+ * return the corresponding `AssistantMessageEvent` to forward to the agent.
+ *
+ * Mutates `state.message` in place: text/thinking deltas append to the
+ * matching content block, tool-call deltas reparse accumulated JSON, and
+ * `done`/`error` populate stop reason, usage, and any error message. Returns
+ * `undefined` when an event has no agent-visible counterpart (currently only
+ * `toolcall_end` against a non-toolCall block, which is silently dropped).
+ *
+ * Throws if a delta arrives for the wrong content type — that signals a bug
+ * in the event source's normalization.
+ */
 export function applyNormalizedAssistantMessageEvent(
 	normalizedEvent: NormalizedAssistantMessageEvent,
 	state: NormalizedAssistantMessageState,

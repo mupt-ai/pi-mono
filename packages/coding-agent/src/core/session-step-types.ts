@@ -10,6 +10,12 @@ import type {
 } from "@mupt-ai/pi-agent-core";
 import type { InputSource } from "./extensions/index.js";
 
+/**
+ * Discrete phase of the AgentSession-level stepped loop.
+ *
+ * Wraps the lower-level core agent `LoopPhase` with session-only phases for
+ * prompt preparation, post-turn extension effects, and compaction.
+ */
 export type SessionLoopPhase =
 	| "preparing_prompt"
 	| "awaiting_assistant"
@@ -22,8 +28,16 @@ export type SessionLoopPhase =
 	| "completed"
 	| "failed";
 
+/** Terminal status reported by the session-level stepped loop. */
 export type SessionLoopTerminalStatus = "running" | "completed" | "failed";
 
+/**
+ * Input that kicks off a session-level stepped loop.
+ *
+ * `text` is the normal user-typed path (slash commands and prompt templates
+ * may still need expansion via `expandPromptTemplates`). `messages` is the
+ * pre-built path used when callers already have AgentMessages in hand.
+ */
 export type SessionLoopInput =
 	| {
 			kind: "text";
@@ -37,6 +51,13 @@ export type SessionLoopInput =
 			messages: AgentMessage[];
 	  };
 
+/**
+ * Serializable snapshot of the session's steering and follow-up queues.
+ *
+ * `steeringLabels` / `followUpLabels` carry the human-readable labels shown
+ * in the UI for each queued message. `pendingNextTurnMessages` are messages
+ * that have been claimed for the next turn but not yet handed to the core loop.
+ */
 export interface SessionQueueSnapshot {
 	steering: AgentMessage[];
 	followUp: AgentMessage[];
@@ -45,11 +66,19 @@ export interface SessionQueueSnapshot {
 	pendingNextTurnMessages: AgentMessage[];
 }
 
+/** Pending compaction emitted by the stepped loop. `willRetry` means the original turn should retry after compacting. */
 export interface SessionCompactionRequest {
 	reason: "threshold" | "overflow";
 	willRetry: boolean;
 }
 
+/**
+ * Serializable carry-state for the session-level stepped loop.
+ *
+ * `coreState` is the embedded lower-level agent loop state (when active);
+ * the surrounding fields capture session-only concerns like queues, retry
+ * counts, and the most recent assistant message used for compaction.
+ */
 export interface SessionLoopState {
 	phase: SessionLoopPhase;
 	terminalStatus: SessionLoopTerminalStatus;
@@ -63,6 +92,12 @@ export interface SessionLoopState {
 	compactionRequest?: SessionCompactionRequest;
 }
 
+/**
+ * Persistence operation the host should apply to the session log.
+ *
+ * Steps emit these instead of writing to disk directly so workflow runners
+ * can persist them transactionally alongside the carry-state.
+ */
 export type SessionPersistenceOp =
 	| { type: "append_message"; message: AgentMessage }
 	| {
@@ -81,6 +116,13 @@ export type SessionPersistenceOp =
 			fromExtension?: boolean;
 	  };
 
+/**
+ * One-step command accepted by the session stepped loop.
+ *
+ * Most commands map onto the underlying core agent loop; `prepare_prompt`,
+ * `run_post_turn_effects`, and `run_compaction` are session-only steps that
+ * have no core-loop equivalent.
+ */
 export type SessionStepCommand =
 	| { type: "prepare_prompt" }
 	| { type: "run_assistant_turn" }
@@ -91,6 +133,7 @@ export type SessionStepCommand =
 	| { type: "run_post_turn_effects" }
 	| { type: "run_compaction" };
 
+/** Next command the host should issue, or a terminal status when the session loop is done. */
 export type SessionStepNextAction =
 	| "run_assistant_turn"
 	| "complete_provider_response"
@@ -102,6 +145,15 @@ export type SessionStepNextAction =
 	| "completed"
 	| "failed";
 
+/**
+ * Result of advancing the session stepped loop by one command.
+ *
+ * `coreEvents` are agent-level events forwarded to UI subscribers,
+ * `sessionEvents` are session-level events (compaction, etc.), and
+ * `sessionOps` are the persistence writes the host must apply. External work
+ * payloads (provider request, tool calls, terminal messages) signal what the
+ * host needs to resolve before the next step.
+ */
 export interface SessionStepResult {
 	state: SessionLoopState;
 	coreEvents: AgentEvent[];

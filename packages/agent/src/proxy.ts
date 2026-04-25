@@ -32,6 +32,7 @@ class ProxyMessageEventStream extends EventStream<AssistantMessageEvent, Assista
 	}
 }
 
+/** Wire-format event sent by the proxy. Same shape as `NormalizedAssistantMessageEvent`, JSON-serialized per line. */
 export type ProxyAssistantMessageEvent = NormalizedAssistantMessageEvent;
 
 type ProxySerializableStreamOptions = Pick<
