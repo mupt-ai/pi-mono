@@ -35,6 +35,51 @@ describe("AuthStorage", () => {
 	}
 
 	describe("API key resolution", () => {
+		test("falls back to OPENAI_API_KEY from the environment", async () => {
+			const original = process.env.OPENAI_API_KEY;
+			process.env.OPENAI_API_KEY = "env-openai-key";
+
+			try {
+				writeAuthJson({});
+				authStorage = AuthStorage.create(authJsonPath);
+
+				await expect(authStorage.getApiKey("openai")).resolves.toBe("env-openai-key");
+				expect(authStorage.hasAuth("openai")).toBe(true);
+			} finally {
+				if (original === undefined) {
+					delete process.env.OPENAI_API_KEY;
+				} else {
+					process.env.OPENAI_API_KEY = original;
+				}
+			}
+		});
+
+		test("prefers ANTHROPIC_OAUTH_TOKEN over ANTHROPIC_API_KEY", async () => {
+			const originalOauth = process.env.ANTHROPIC_OAUTH_TOKEN;
+			const originalApiKey = process.env.ANTHROPIC_API_KEY;
+			process.env.ANTHROPIC_OAUTH_TOKEN = "oauth-token";
+			process.env.ANTHROPIC_API_KEY = "api-key";
+
+			try {
+				writeAuthJson({});
+				authStorage = AuthStorage.create(authJsonPath);
+
+				await expect(authStorage.getApiKey("anthropic")).resolves.toBe("oauth-token");
+				expect(authStorage.hasAuth("anthropic")).toBe(true);
+			} finally {
+				if (originalOauth === undefined) {
+					delete process.env.ANTHROPIC_OAUTH_TOKEN;
+				} else {
+					process.env.ANTHROPIC_OAUTH_TOKEN = originalOauth;
+				}
+				if (originalApiKey === undefined) {
+					delete process.env.ANTHROPIC_API_KEY;
+				} else {
+					process.env.ANTHROPIC_API_KEY = originalApiKey;
+				}
+			}
+		});
+
 		test("literal API key is returned directly", async () => {
 			writeAuthJson({
 				anthropic: { type: "api_key", key: "sk-ant-literal-key" },
