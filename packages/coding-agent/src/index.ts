@@ -211,6 +211,7 @@ export {
 	type SessionHeader,
 	type SessionInfo,
 	type SessionInfoEntry,
+	type SessionLogSnapshot,
 	SessionManager,
 	type SessionMessageEntry,
 	type ThinkingLevelChangeEntry,
