@@ -10,11 +10,13 @@ import {
 	type Context,
 	EventStream,
 	type Model,
-	parseStreamingJson,
 	type SimpleStreamOptions,
-	type StopReason,
-	type ToolCall,
 } from "@mariozechner/pi-ai";
+import {
+	applyNormalizedAssistantMessageEvent,
+	createNormalizedAssistantMessageState,
+	type NormalizedAssistantMessageEvent,
+} from "./normalized-assistant-events.js";
 
 // Create stream class matching ProxyMessageEventStream
 class ProxyMessageEventStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
@@ -30,31 +32,8 @@ class ProxyMessageEventStream extends EventStream<AssistantMessageEvent, Assista
 	}
 }
 
-/**
- * Proxy event types - server sends these with partial field stripped to reduce bandwidth.
- */
-export type ProxyAssistantMessageEvent =
-	| { type: "start" }
-	| { type: "text_start"; contentIndex: number }
-	| { type: "text_delta"; contentIndex: number; delta: string }
-	| { type: "text_end"; contentIndex: number; contentSignature?: string }
-	| { type: "thinking_start"; contentIndex: number }
-	| { type: "thinking_delta"; contentIndex: number; delta: string }
-	| { type: "thinking_end"; contentIndex: number; contentSignature?: string }
-	| { type: "toolcall_start"; contentIndex: number; id: string; toolName: string }
-	| { type: "toolcall_delta"; contentIndex: number; delta: string }
-	| { type: "toolcall_end"; contentIndex: number }
-	| {
-			type: "done";
-			reason: Extract<StopReason, "stop" | "length" | "toolUse">;
-			usage: AssistantMessage["usage"];
-	  }
-	| {
-			type: "error";
-			reason: Extract<StopReason, "aborted" | "error">;
-			errorMessage?: string;
-			usage: AssistantMessage["usage"];
-	  };
+/** Wire-format event sent by the proxy. Same shape as `NormalizedAssistantMessageEvent`, JSON-serialized per line. */
+export type ProxyAssistantMessageEvent = NormalizedAssistantMessageEvent;
 
 type ProxySerializableStreamOptions = Pick<
 	SimpleStreamOptions,
@@ -117,24 +96,7 @@ export function streamProxy(model: Model<any>, context: Context, options: ProxyS
 	const stream = new ProxyMessageEventStream();
 
 	(async () => {
-		// Initialize the partial message that we'll build up from events
-		const partial: AssistantMessage = {
-			role: "assistant",
-			stopReason: "stop",
-			content: [],
-			api: model.api,
-			provider: model.provider,
-			model: model.id,
-			usage: {
-				input: 0,
-				output: 0,
-				cacheRead: 0,
-				cacheWrite: 0,
-				totalTokens: 0,
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-			},
-			timestamp: Date.now(),
-		};
+		const state = createNormalizedAssistantMessageState(model);
 
 		let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
 
@@ -197,7 +159,7 @@ export function streamProxy(model: Model<any>, context: Context, options: ProxyS
 						const data = line.slice(6).trim();
 						if (data) {
 							const proxyEvent = JSON.parse(data) as ProxyAssistantMessageEvent;
-							const event = processProxyEvent(proxyEvent, partial);
+							const event = applyNormalizedAssistantMessageEvent(proxyEvent, state);
 							if (event) {
 								stream.push(event);
 							}
@@ -214,12 +176,12 @@ export function streamProxy(model: Model<any>, context: Context, options: ProxyS
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : String(error);
 			const reason = options.signal?.aborted ? "aborted" : "error";
-			partial.stopReason = reason;
-			partial.errorMessage = errorMessage;
+			state.message.stopReason = reason;
+			state.message.errorMessage = errorMessage;
 			stream.push({
 				type: "error",
 				reason,
-				error: partial,
+				error: state.message,
 			});
 			stream.end();
 		} finally {
@@ -230,138 +192,4 @@ export function streamProxy(model: Model<any>, context: Context, options: ProxyS
 	})();
 
 	return stream;
-}
-
-/**
- * Process a proxy event and update the partial message.
- */
-function processProxyEvent(
-	proxyEvent: ProxyAssistantMessageEvent,
-	partial: AssistantMessage,
-): AssistantMessageEvent | undefined {
-	switch (proxyEvent.type) {
-		case "start":
-			return { type: "start", partial };
-
-		case "text_start":
-			partial.content[proxyEvent.contentIndex] = { type: "text", text: "" };
-			return { type: "text_start", contentIndex: proxyEvent.contentIndex, partial };
-
-		case "text_delta": {
-			const content = partial.content[proxyEvent.contentIndex];
-			if (content?.type === "text") {
-				content.text += proxyEvent.delta;
-				return {
-					type: "text_delta",
-					contentIndex: proxyEvent.contentIndex,
-					delta: proxyEvent.delta,
-					partial,
-				};
-			}
-			throw new Error("Received text_delta for non-text content");
-		}
-
-		case "text_end": {
-			const content = partial.content[proxyEvent.contentIndex];
-			if (content?.type === "text") {
-				content.textSignature = proxyEvent.contentSignature;
-				return {
-					type: "text_end",
-					contentIndex: proxyEvent.contentIndex,
-					content: content.text,
-					partial,
-				};
-			}
-			throw new Error("Received text_end for non-text content");
-		}
-
-		case "thinking_start":
-			partial.content[proxyEvent.contentIndex] = { type: "thinking", thinking: "" };
-			return { type: "thinking_start", contentIndex: proxyEvent.contentIndex, partial };
-
-		case "thinking_delta": {
-			const content = partial.content[proxyEvent.contentIndex];
-			if (content?.type === "thinking") {
-				content.thinking += proxyEvent.delta;
-				return {
-					type: "thinking_delta",
-					contentIndex: proxyEvent.contentIndex,
-					delta: proxyEvent.delta,
-					partial,
-				};
-			}
-			throw new Error("Received thinking_delta for non-thinking content");
-		}
-
-		case "thinking_end": {
-			const content = partial.content[proxyEvent.contentIndex];
-			if (content?.type === "thinking") {
-				content.thinkingSignature = proxyEvent.contentSignature;
-				return {
-					type: "thinking_end",
-					contentIndex: proxyEvent.contentIndex,
-					content: content.thinking,
-					partial,
-				};
-			}
-			throw new Error("Received thinking_end for non-thinking content");
-		}
-
-		case "toolcall_start":
-			partial.content[proxyEvent.contentIndex] = {
-				type: "toolCall",
-				id: proxyEvent.id,
-				name: proxyEvent.toolName,
-				arguments: {},
-				partialJson: "",
-			} satisfies ToolCall & { partialJson: string } as ToolCall;
-			return { type: "toolcall_start", contentIndex: proxyEvent.contentIndex, partial };
-
-		case "toolcall_delta": {
-			const content = partial.content[proxyEvent.contentIndex];
-			if (content?.type === "toolCall") {
-				(content as any).partialJson += proxyEvent.delta;
-				content.arguments = parseStreamingJson((content as any).partialJson) || {};
-				partial.content[proxyEvent.contentIndex] = { ...content }; // Trigger reactivity
-				return {
-					type: "toolcall_delta",
-					contentIndex: proxyEvent.contentIndex,
-					delta: proxyEvent.delta,
-					partial,
-				};
-			}
-			throw new Error("Received toolcall_delta for non-toolCall content");
-		}
-
-		case "toolcall_end": {
-			const content = partial.content[proxyEvent.contentIndex];
-			if (content?.type === "toolCall") {
-				delete (content as any).partialJson;
-				return {
-					type: "toolcall_end",
-					contentIndex: proxyEvent.contentIndex,
-					toolCall: content,
-					partial,
-				};
-			}
-			return undefined;
-		}
-
-		case "done":
-			partial.stopReason = proxyEvent.reason;
-			partial.usage = proxyEvent.usage;
-			return { type: "done", reason: proxyEvent.reason, message: partial };
-
-		case "error":
-			partial.stopReason = proxyEvent.reason;
-			partial.errorMessage = proxyEvent.errorMessage;
-			partial.usage = proxyEvent.usage;
-			return { type: "error", reason: proxyEvent.reason, error: partial };
-
-		default: {
-			const _exhaustiveCheck: never = proxyEvent;
-			console.warn(`Unhandled proxy event type: ${(proxyEvent as any).type}`);
-			return undefined;
-		}
-	}
 }

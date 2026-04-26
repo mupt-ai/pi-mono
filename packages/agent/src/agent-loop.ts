@@ -5,12 +5,19 @@
 
 import {
 	type AssistantMessage,
+	type AssistantMessageEvent,
 	type Context,
 	EventStream,
 	streamSimple,
 	type ToolResultMessage,
 	validateToolArguments,
 } from "@mariozechner/pi-ai";
+import {
+	applyNormalizedAssistantMessageEvent,
+	createNormalizedAssistantMessageState,
+	type NormalizedAssistantMessageEvent,
+	type NormalizedAssistantMessageEventSource,
+} from "./normalized-assistant-events.js";
 import type {
 	AgentContext,
 	AgentEvent,
@@ -19,6 +26,8 @@ import type {
 	AgentTool,
 	AgentToolCall,
 	AgentToolResult,
+	PreparedProviderRequest,
+	PreparedProviderRequestOptions,
 	StreamFn,
 } from "./types.js";
 
@@ -234,54 +243,83 @@ async function runLoop(
 }
 
 /**
- * Stream an assistant response from the LLM.
- * This is where AgentMessage[] gets transformed to Message[] for the LLM.
+ * Convert an `AgentContext` into a serializable provider request.
+ *
+ * Runs `transformContext` (if any), then `convertToLlm` to produce LLM-shaped
+ * messages, and bundles them with the model and prepared request options.
+ * Hosts use this when running provider calls externally — pair it with
+ * `applyAssistantProviderResponse()` to feed the streamed events back in.
  */
-async function streamAssistantResponse(
+export async function prepareAssistantProviderRequest(
 	context: AgentContext,
 	config: AgentLoopConfig,
-	signal: AbortSignal | undefined,
-	emit: AgentEventSink,
-	streamFn?: StreamFn,
-): Promise<AssistantMessage> {
-	// Apply context transform if configured (AgentMessage[] → AgentMessage[])
+	signal?: AbortSignal,
+): Promise<PreparedProviderRequest> {
 	let messages = context.messages;
 	if (config.transformContext) {
 		messages = await config.transformContext(messages, signal);
 	}
 
-	// Convert to LLM-compatible messages (AgentMessage[] → Message[])
 	const llmMessages = await config.convertToLlm(messages);
-
-	// Build LLM context
 	const llmContext: Context = {
 		systemPrompt: context.systemPrompt,
 		messages: llmMessages,
-		tools: context.tools,
+		tools: context.tools?.map((tool) => ({
+			name: tool.name,
+			description: tool.description,
+			parameters: tool.parameters,
+		})),
 	};
 
-	const streamFunction = streamFn || streamSimple;
+	return {
+		model: config.model,
+		context: llmContext,
+		options: createPreparedProviderRequestOptions(config),
+	};
+}
 
-	// Resolve API key (important for expiring tokens)
-	const resolvedApiKey =
-		(config.getApiKey ? await config.getApiKey(config.model.provider) : undefined) || config.apiKey;
-
-	const response = await streamFunction(config.model, llmContext, {
-		...config,
-		apiKey: resolvedApiKey,
-		signal,
-	});
-
-	let partialMessage: AssistantMessage | null = null;
+/**
+ * Reconstruct an `AssistantMessage` from a normalized provider event stream.
+ *
+ * Consumes `NormalizedAssistantMessageEvent`s, mutates `context.messages` in
+ * place to track the streaming partial, and emits `message_start`,
+ * `message_update`, and `message_end` events through `emit`. Returns the final
+ * message once a `done` or `error` terminal event arrives. Throws if the
+ * stream ends without a terminal event.
+ *
+ * `options.finalizeMessage` lets callers patch the reconstructed message
+ * before it's emitted — e.g. attaching usage data computed from raw payloads.
+ */
+export async function applyAssistantProviderResponse(
+	model: PreparedProviderRequest["model"],
+	events: NormalizedAssistantMessageEventSource,
+	context: AgentContext,
+	emit: AgentEventSink,
+	options: {
+		finalizeMessage?: (reconstructed: AssistantMessage) => Promise<AssistantMessage> | AssistantMessage;
+	} = {},
+): Promise<AssistantMessage> {
+	const state = createNormalizedAssistantMessageState(model);
 	let addedPartial = false;
 
-	for await (const event of response) {
+	const ensureMessageStarted = async (): Promise<void> => {
+		if (addedPartial) {
+			return;
+		}
+		context.messages.push(state.message);
+		addedPartial = true;
+		await emit({ type: "message_start", message: { ...state.message } });
+	};
+
+	for await (const normalizedEvent of events) {
+		const event = applyNormalizedAssistantMessageEvent(normalizedEvent, state);
+		if (!event) {
+			continue;
+		}
+
 		switch (event.type) {
 			case "start":
-				partialMessage = event.partial;
-				context.messages.push(partialMessage);
-				addedPartial = true;
-				await emit({ type: "message_start", message: { ...partialMessage } });
+				await ensureMessageStarted();
 				break;
 
 			case "text_start":
@@ -293,26 +331,26 @@ async function streamAssistantResponse(
 			case "toolcall_start":
 			case "toolcall_delta":
 			case "toolcall_end":
-				if (partialMessage) {
-					partialMessage = event.partial;
-					context.messages[context.messages.length - 1] = partialMessage;
-					await emit({
-						type: "message_update",
-						assistantMessageEvent: event,
-						message: { ...partialMessage },
-					});
-				}
+				await ensureMessageStarted();
+				context.messages[context.messages.length - 1] = event.partial;
+				await emit({
+					type: "message_update",
+					assistantMessageEvent: event,
+					message: { ...event.partial },
+				});
 				break;
 
 			case "done":
 			case "error": {
-				const finalMessage = await response.result();
+				let finalMessage = event.type === "done" ? event.message : event.error;
+				if (options.finalizeMessage) {
+					finalMessage = await options.finalizeMessage(finalMessage);
+				}
 				if (addedPartial) {
 					context.messages[context.messages.length - 1] = finalMessage;
 				} else {
 					context.messages.push(finalMessage);
-				}
-				if (!addedPartial) {
+					addedPartial = true;
 					await emit({ type: "message_start", message: { ...finalMessage } });
 				}
 				await emit({ type: "message_end", message: finalMessage });
@@ -321,15 +359,148 @@ async function streamAssistantResponse(
 		}
 	}
 
-	const finalMessage = await response.result();
-	if (addedPartial) {
-		context.messages[context.messages.length - 1] = finalMessage;
-	} else {
-		context.messages.push(finalMessage);
-		await emit({ type: "message_start", message: { ...finalMessage } });
+	throw new Error("Provider response ended without a terminal event");
+}
+
+/**
+ * Stream an assistant response from the LLM.
+ * This is where AgentMessage[] gets transformed to Message[] for the LLM.
+ */
+async function streamAssistantResponse(
+	context: AgentContext,
+	config: AgentLoopConfig,
+	signal: AbortSignal | undefined,
+	emit: AgentEventSink,
+	streamFn?: StreamFn,
+): Promise<AssistantMessage> {
+	const preparedRequest = await prepareAssistantProviderRequest(context, config, signal);
+	const streamFunction = streamFn || streamSimple;
+	const resolvedApiKey =
+		(config.getApiKey ? await config.getApiKey(config.model.provider) : undefined) || config.apiKey;
+
+	const response = await streamFunction(preparedRequest.model, preparedRequest.context, {
+		...preparedRequest.options,
+		apiKey: resolvedApiKey,
+		onPayload: config.onPayload,
+		signal,
+	});
+
+	return applyAssistantProviderResponse(
+		preparedRequest.model,
+		normalizeAssistantMessageEvents(response),
+		context,
+		emit,
+		{
+			finalizeMessage: async () => response.result(),
+		},
+	);
+}
+
+function createPreparedProviderRequestOptions(config: AgentLoopConfig): PreparedProviderRequestOptions {
+	const options: PreparedProviderRequestOptions = {};
+
+	if (config.temperature !== undefined) {
+		options.temperature = config.temperature;
 	}
-	await emit({ type: "message_end", message: finalMessage });
-	return finalMessage;
+	if (config.maxTokens !== undefined) {
+		options.maxTokens = config.maxTokens;
+	}
+	if (config.reasoning !== undefined) {
+		options.reasoning = config.reasoning;
+	}
+	if (config.thinkingBudgets !== undefined) {
+		options.thinkingBudgets = { ...config.thinkingBudgets };
+	}
+	if (config.transport !== undefined) {
+		options.transport = config.transport;
+	}
+	if (config.cacheRetention !== undefined) {
+		options.cacheRetention = config.cacheRetention;
+	}
+	if (config.sessionId !== undefined) {
+		options.sessionId = config.sessionId;
+	}
+	if (config.headers !== undefined) {
+		options.headers = { ...config.headers };
+	}
+	if (config.maxRetryDelayMs !== undefined) {
+		options.maxRetryDelayMs = config.maxRetryDelayMs;
+	}
+	if (config.metadata !== undefined) {
+		options.metadata = { ...config.metadata };
+	}
+
+	return options;
+}
+
+async function* normalizeAssistantMessageEvents(
+	response: AsyncIterable<AssistantMessageEvent>,
+): AsyncIterable<NormalizedAssistantMessageEvent> {
+	for await (const event of response) {
+		yield normalizeAssistantMessageEvent(event);
+	}
+}
+
+function normalizeAssistantMessageEvent(event: AssistantMessageEvent): NormalizedAssistantMessageEvent {
+	switch (event.type) {
+		case "start":
+			return { type: "start" };
+		case "text_start":
+			return { type: "text_start", contentIndex: event.contentIndex };
+		case "text_delta":
+			return { type: "text_delta", contentIndex: event.contentIndex, delta: event.delta };
+		case "text_end":
+			return {
+				type: "text_end",
+				contentIndex: event.contentIndex,
+				contentSignature: getTextSignature(event.partial, event.contentIndex),
+			};
+		case "thinking_start":
+			return { type: "thinking_start", contentIndex: event.contentIndex };
+		case "thinking_delta":
+			return { type: "thinking_delta", contentIndex: event.contentIndex, delta: event.delta };
+		case "thinking_end":
+			return {
+				type: "thinking_end",
+				contentIndex: event.contentIndex,
+				contentSignature: getThinkingSignature(event.partial, event.contentIndex),
+			};
+		case "toolcall_start": {
+			const toolCall = event.partial.content[event.contentIndex];
+			if (toolCall?.type !== "toolCall") {
+				throw new Error("Received toolcall_start without a tool call in partial content");
+			}
+			return {
+				type: "toolcall_start",
+				contentIndex: event.contentIndex,
+				id: toolCall.id,
+				toolName: toolCall.name,
+			};
+		}
+		case "toolcall_delta":
+			return { type: "toolcall_delta", contentIndex: event.contentIndex, delta: event.delta };
+		case "toolcall_end":
+			return { type: "toolcall_end", contentIndex: event.contentIndex };
+		case "done":
+			return { type: "done", reason: event.reason, usage: event.message.usage };
+		case "error":
+			return {
+				type: "error",
+				reason: event.reason,
+				errorMessage: event.error.errorMessage,
+				usage: event.error.usage,
+			};
+	}
+}
+
+function getTextSignature(partial: AssistantMessage, contentIndex: number): string | undefined {
+	const content = partial.content[contentIndex];
+	return content?.type === "text" ? content.textSignature : undefined;
+}
+
+function getThinkingSignature(partial: AssistantMessage, contentIndex: number): string | undefined {
+	const content = partial.content[contentIndex];
+	return content?.type === "thinking" ? content.thinkingSignature : undefined;
 }
 
 /**

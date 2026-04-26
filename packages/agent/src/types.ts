@@ -1,6 +1,7 @@
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
+	Context,
 	ImageContent,
 	Message,
 	Model,
@@ -221,6 +222,26 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * The hook receives the agent abort signal and is responsible for honoring it.
 	 */
 	afterToolCall?: (context: AfterToolCallContext, signal?: AbortSignal) => Promise<AfterToolCallResult | undefined>;
+}
+
+/**
+ * Provider-call options captured at prepare time.
+ *
+ * `signal`, `apiKey`, and `onPayload` are deliberately omitted because they are
+ * supplied by the host that performs the actual streaming call.
+ */
+export type PreparedProviderRequestOptions = Omit<SimpleStreamOptions, "signal" | "apiKey" | "onPayload">;
+
+/**
+ * Everything a host needs to make the provider/LLM streaming call itself.
+ *
+ * Returned from `prepareAssistantProviderRequest()`. Pair the resulting event
+ * stream with `applyAssistantProviderResponse()` to feed it back into the loop.
+ */
+export interface PreparedProviderRequest {
+	model: Model<any>;
+	context: Context;
+	options: PreparedProviderRequestOptions;
 }
 
 /**
