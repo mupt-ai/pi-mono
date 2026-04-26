@@ -18,7 +18,7 @@ export interface SystemNotificationMessage {
 
 // Extend CustomAgentMessages interface via declaration merging
 // This must target pi-agent-core where CustomAgentMessages is defined
-declare module "@mariozechner/pi-agent-core" {
+declare module "@mupt-ai/pi-agent-core" {
 	interface CustomAgentMessages {
 		"system-notification": SystemNotificationMessage;
 	}

@@ -1,6 +1,6 @@
 # @mariozechner/pi-web-ui
 
-Reusable web UI components for building AI chat interfaces powered by [@mariozechner/pi-ai](../ai) and [@mariozechner/pi-agent-core](../agent).
+Reusable web UI components for building AI chat interfaces powered by [@mariozechner/pi-ai](../ai) and [@mupt-ai/pi-agent-core](../agent).
 
 Built with [mini-lit](https://github.com/badlogic/mini-lit) web components and Tailwind CSS v4.
 
@@ -17,7 +17,7 @@ Built with [mini-lit](https://github.com/badlogic/mini-lit) web components and T
 ## Installation
 
 ```bash
-npm install @mariozechner/pi-web-ui @mariozechner/pi-agent-core @mariozechner/pi-ai
+npm install @mariozechner/pi-web-ui @mupt-ai/pi-agent-core @mariozechner/pi-ai
 ```
 
 ## Quick Start
@@ -25,7 +25,7 @@ npm install @mariozechner/pi-web-ui @mariozechner/pi-agent-core @mariozechner/pi
 See the [example](./example) directory for a complete working application.
 
 ```typescript
-import { Agent } from '@mariozechner/pi-agent-core';
+import { Agent } from '@mupt-ai/pi-agent-core';
 import { getModel } from '@mariozechner/pi-ai';
 import {
   ChatPanel,
@@ -169,7 +169,7 @@ Properties:
 ### Agent (from pi-agent-core)
 
 ```typescript
-import { Agent } from '@mariozechner/pi-agent-core';
+import { Agent } from '@mupt-ai/pi-agent-core';
 
 const agent = new Agent({
   initialState: {
@@ -259,7 +259,7 @@ interface SystemNotification {
   timestamp: string;
 }
 
-declare module '@mariozechner/pi-agent-core' {
+declare module '@mupt-ai/pi-agent-core' {
   interface CustomAgentMessages {
     'system-notification': SystemNotification;
   }

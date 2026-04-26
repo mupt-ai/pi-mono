@@ -1,4 +1,3 @@
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Transport } from "@mariozechner/pi-ai";
 import {
 	Container,
@@ -11,6 +10,7 @@ import {
 	Spacer,
 	Text,
 } from "@mariozechner/pi-tui";
+import type { ThinkingLevel } from "@mupt-ai/pi-agent-core";
 import { getSelectListTheme, getSettingsListTheme, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
