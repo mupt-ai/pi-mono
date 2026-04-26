@@ -309,7 +309,7 @@ export async function prepareAssistantProviderRequest(
 	};
 }
 
-// Strip down to the wire schema. PreparedProviderRequest is meant to be plain data hosts can ship across IPC, Temporal activities, or replay logs; AgentTool.execute (a function) would otherwise get silently dropped by JSON or crash structuredClone at the boundary.
+// Strip down to the wire schema. PreparedProviderRequest is meant to be plain data hosts can ship across IPC, network, or replay-log boundaries; AgentTool.execute (a function) would otherwise get silently dropped by JSON or crash structuredClone.
 function toWireTool(tool: AgentTool<any>): Tool {
 	return { name: tool.name, description: tool.description, parameters: tool.parameters };
 }
