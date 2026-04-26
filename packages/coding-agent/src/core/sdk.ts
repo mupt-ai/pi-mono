@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { Agent, type AgentMessage, type ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { type Message, type Model, streamSimple } from "@mariozechner/pi-ai";
 import { getAgentDir } from "../config.js";
-import { AgentSession } from "./agent-session.js";
+import { AgentSession, type PromptOptions } from "./agent-session.js";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.js";
 import { AuthStorage } from "./auth-storage.js";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
@@ -13,6 +13,7 @@ import { findInitialModel } from "./model-resolver.js";
 import type { ResourceLoader } from "./resource-loader.js";
 import { DefaultResourceLoader } from "./resource-loader.js";
 import { getDefaultSessionDir, SessionManager } from "./session-manager.js";
+import type { SessionLoopState, SessionStepCommand, SessionStepResult } from "./session-step-types.js";
 import { SettingsManager } from "./settings-manager.js";
 import { isInstallTelemetryEnabled } from "./telemetry.js";
 import { time } from "./timings.js";
@@ -88,6 +89,8 @@ export interface CreateAgentSessionResult {
 	/** Warning if session was restored with a different model than saved */
 	modelFallbackMessage?: string;
 }
+
+export interface SessionStepRuntime extends CreateAgentSessionResult {}
 
 // Re-exports
 
@@ -395,4 +398,25 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		extensionsResult,
 		modelFallbackMessage,
 	};
+}
+
+export async function createSessionStepRuntime(options: CreateAgentSessionOptions = {}): Promise<SessionStepRuntime> {
+	return createAgentSession(options);
+}
+
+export async function initializeSessionLoopState(
+	prompt: string | AgentMessage | AgentMessage[],
+	runtime: SessionStepRuntime,
+	options?: PromptOptions,
+): Promise<SessionLoopState> {
+	return runtime.session.initializeSessionLoopState(prompt, options);
+}
+
+export async function stepSessionLoop(
+	state: SessionLoopState,
+	command: SessionStepCommand,
+	runtime: SessionStepRuntime,
+	signal?: AbortSignal,
+): Promise<SessionStepResult> {
+	return runtime.session.stepSessionLoop(state, command, signal);
 }
