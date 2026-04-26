@@ -340,6 +340,138 @@ export interface AgentContext {
 	tools?: AgentTool<any>[];
 }
 
+/** Discrete phase of the stepped agent loop. Used to gate which `StepCommand` is valid next. */
+export type LoopPhase =
+	| "awaiting_assistant"
+	| "assistant_streaming"
+	| "awaiting_tool_preflight"
+	| "awaiting_tool_execution"
+	| "awaiting_turn_close"
+	| "awaiting_follow_up"
+	| "completed"
+	| "failed";
+
+/** Terminal status of the stepped loop. Mirrors the high-level lifecycle reported to hosts. */
+export type LoopTerminalStatus = "running" | "completed" | "failed";
+
+/** Tool call after argument validation but before execution, carried between step boundaries. */
+export interface PreparedToolCallSnapshot {
+	toolCallId: string;
+	toolName: string;
+	rawArguments: AgentToolCall["arguments"];
+	args: unknown;
+}
+
+/** Tool call result captured immediately after execution, before finalization. */
+export interface ExecutedToolCallSnapshot {
+	toolCallId: string;
+	result: AgentToolResult<unknown>;
+	isError: boolean;
+}
+
+/** Fully finalized tool call: validated args, executed result, and the emitted ToolResultMessage. */
+export interface CompletedToolCallSnapshot {
+	toolCallId: string;
+	toolName: string;
+	rawArguments: AgentToolCall["arguments"];
+	args?: unknown;
+	result: AgentToolResult<unknown>;
+	isError: boolean;
+	message: ToolResultMessage<unknown>;
+}
+
+/**
+ * Serializable carry-state for the stepped agent loop.
+ *
+ * Contains the prompt, transcript-in-progress, current phase, and any pending
+ * prompt/steering/follow-up messages plus partially-completed tool work.
+ * `stepLoop()` clones this between transitions so callers can persist it
+ * verbatim and resume from another process.
+ */
+export interface LoopState {
+	systemPrompt: string;
+	messages: AgentMessage[];
+	newMessages: AgentMessage[];
+	phase: LoopPhase;
+	toolExecution: ToolExecutionMode;
+	pendingPromptMessages: AgentMessage[];
+	pendingSteeringMessages: AgentMessage[];
+	pendingFollowUpMessages: AgentMessage[];
+	pendingToolCalls: AgentToolCall[];
+	preparedToolCalls: PreparedToolCallSnapshot[];
+	executedToolCalls: ExecutedToolCallSnapshot[];
+	completedToolResults: CompletedToolCallSnapshot[];
+	currentAssistantMessage?: AssistantMessage;
+	firstTurn: boolean;
+	initialSteeringChecked: boolean;
+	terminalStatus: LoopTerminalStatus;
+}
+
+/**
+ * Single tool call the host should execute when the loop is in external execution mode.
+ *
+ * Surfaced from `stepLoop()` together with `nextAction: "complete_tool_call"`. The
+ * host calls the tool, then feeds the result back via a `complete_tool_call` command.
+ */
+export interface ToolExecutionRequest {
+	toolCallId: string;
+	toolName: string;
+	rawArguments: AgentToolCall["arguments"];
+	args: unknown;
+}
+
+/**
+ * One-step command accepted by `stepLoop()`.
+ *
+ * The legal command depends on the current `LoopPhase`. `complete_tool_call`
+ * carries the externally-produced output that the loop was waiting on.
+ */
+export type StepCommand =
+	| { type: "run_assistant_turn" }
+	| { type: "prepare_tool_calls" }
+	| { type: "complete_tool_call"; toolCallId: string; result: AgentToolResult<unknown>; isError: boolean }
+	| { type: "finalize_turn" }
+	| { type: "check_follow_up" };
+
+/** Next command the host should issue, or a terminal status when the loop is done. */
+export type StepLoopNextAction =
+	| "run_assistant_turn"
+	| "prepare_tool_calls"
+	| "complete_tool_call"
+	| "finalize_turn"
+	| "check_follow_up"
+	| "completed"
+	| "failed";
+
+/**
+ * Result of advancing the stepped loop by one command.
+ *
+ * Includes the cloned-and-updated `LoopState`, any agent events emitted during
+ * this step, the next action the host should perform, and any external work
+ * payloads (tool calls, terminal messages) that need to be resolved before the
+ * next step.
+ */
+export interface StepResult {
+	state: LoopState;
+	events: AgentEvent[];
+	nextAction: StepLoopNextAction;
+	providerRequestPayload?: unknown;
+	toolExecutionRequests?: ToolExecutionRequest[];
+	terminalMessages?: AgentMessage[];
+}
+
+/**
+ * Per-call runtime context for the stepped loop.
+ *
+ * Held by the host and re-passed into every `stepLoop()` invocation so the
+ * carry-state itself stays fully serializable.
+ */
+export interface StepLoopRuntime {
+	config: AgentLoopConfig;
+	tools?: AgentTool<any>[];
+	streamFn?: StreamFn;
+}
+
 /**
  * Events emitted by the Agent for UI updates.
  *

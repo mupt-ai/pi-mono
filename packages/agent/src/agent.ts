@@ -141,6 +141,34 @@ class PendingMessageQueue {
 	clear(): void {
 		this.messages = [];
 	}
+
+	/** Snapshot the current queue contents without draining. */
+	peek(): AgentMessage[] {
+		return this.messages.slice();
+	}
+
+	/** Replace the queue contents (used to restore from a snapshot). */
+	load(messages: AgentMessage[]): void {
+		this.messages = messages.slice();
+	}
+
+	/**
+	 * Remove a specific message from the queue. Matches by reference first,
+	 * then by `timestamp + role` to handle cases where the consumer holds a
+	 * different object reference (e.g., after a snapshot/restore round-trip).
+	 * Returns true if a message was found and removed.
+	 */
+	remove(message: AgentMessage): boolean {
+		const index = this.messages.findIndex(
+			(candidate) =>
+				candidate === message || (candidate.timestamp === message.timestamp && candidate.role === message.role),
+		);
+		if (index === -1) {
+			return false;
+		}
+		this.messages.splice(index, 1);
+		return true;
+	}
 }
 
 type ActiveRun = {
@@ -266,6 +294,47 @@ export class Agent {
 	/** Remove all queued follow-up messages. */
 	clearFollowUpQueue(): void {
 		this.followUpQueue.clear();
+	}
+
+	/**
+	 * Drain queued steering messages, respecting the current `steeringMode`.
+	 * Returns the drained messages and removes them from the queue.
+	 */
+	drainSteeringQueue(): AgentMessage[] {
+		return this.steeringQueue.drain();
+	}
+
+	/**
+	 * Drain queued follow-up messages, respecting the current `followUpMode`.
+	 * Returns the drained messages and removes them from the queue.
+	 */
+	drainFollowUpQueue(): AgentMessage[] {
+		return this.followUpQueue.drain();
+	}
+
+	/** Snapshot the current steering queue contents without draining. */
+	peekSteeringQueue(): AgentMessage[] {
+		return this.steeringQueue.peek();
+	}
+
+	/** Snapshot the current follow-up queue contents without draining. */
+	peekFollowUpQueue(): AgentMessage[] {
+		return this.followUpQueue.peek();
+	}
+
+	/** Replace the steering queue contents (used to restore from a snapshot). */
+	loadSteeringQueue(messages: AgentMessage[]): void {
+		this.steeringQueue.load(messages);
+	}
+
+	/** Replace the follow-up queue contents (used to restore from a snapshot). */
+	loadFollowUpQueue(messages: AgentMessage[]): void {
+		this.followUpQueue.load(messages);
+	}
+
+	/** Remove a specific queued message from whichever queue it's in. Returns true if found. */
+	removeQueuedMessage(message: AgentMessage): boolean {
+		return this.steeringQueue.remove(message) || this.followUpQueue.remove(message);
 	}
 
 	/** Remove all queued steering and follow-up messages. */
