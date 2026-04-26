@@ -23,18 +23,16 @@ describe("detectInstallMethod", () => {
 		);
 
 		expect(detectInstallMethod()).toBe("pnpm");
-		expect(getUpdateInstruction("@mariozechner/pi-coding-agent")).toBe(
-			"Run: pnpm install -g @mariozechner/pi-coding-agent",
-		);
+		expect(getUpdateInstruction("@mupt-ai/pi-coding-agent")).toBe("Run: pnpm install -g @mupt-ai/pi-coding-agent");
 	});
 
 	test("does not self-update unknown wrapper installs", () => {
 		setExecPath("/usr/local/bin/node");
 
 		expect(detectInstallMethod()).toBe("unknown");
-		expect(getSelfUpdateCommand("@mariozechner/pi-coding-agent")).toBeUndefined();
-		expect(getUpdateInstruction("@mariozechner/pi-coding-agent")).toBe(
-			"Update @mariozechner/pi-coding-agent using the package manager, wrapper, or source checkout that provides this installation.",
+		expect(getSelfUpdateCommand("@mupt-ai/pi-coding-agent")).toBeUndefined();
+		expect(getUpdateInstruction("@mupt-ai/pi-coding-agent")).toBe(
+			"Update @mupt-ai/pi-coding-agent using the package manager, wrapper, or source checkout that provides this installation.",
 		);
 	});
 });
