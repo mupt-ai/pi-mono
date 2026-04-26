@@ -314,30 +314,36 @@ function toWireTool(tool: AgentTool<any>): Tool {
 	return { name: tool.name, description: tool.description, parameters: tool.parameters };
 }
 
-const PREPARED_OPTION_KEYS = [
-	"temperature",
-	"maxTokens",
-	"transport",
-	"cacheRetention",
-	"sessionId",
-	"onResponse",
-	"headers",
-	"timeoutMs",
-	"maxRetries",
-	"maxRetryDelayMs",
-	"metadata",
-	"reasoning",
-	"thinkingBudgets",
-] as const satisfies readonly (keyof PreparedProviderRequestOptions)[];
-
-function pickPreparedOptions(config: AgentLoopConfig): PreparedProviderRequestOptions {
-	const options: Record<string, unknown> = {};
-	for (const key of PREPARED_OPTION_KEYS) {
-		if (config[key] !== undefined) {
-			options[key] = config[key];
-		}
-	}
-	return options as PreparedProviderRequestOptions;
+function pickPreparedOptions({
+	temperature,
+	maxTokens,
+	transport,
+	cacheRetention,
+	sessionId,
+	onResponse,
+	headers,
+	timeoutMs,
+	maxRetries,
+	maxRetryDelayMs,
+	metadata,
+	reasoning,
+	thinkingBudgets,
+}: AgentLoopConfig): PreparedProviderRequestOptions {
+	return {
+		temperature,
+		maxTokens,
+		transport,
+		cacheRetention,
+		sessionId,
+		onResponse,
+		headers,
+		timeoutMs,
+		maxRetries,
+		maxRetryDelayMs,
+		metadata,
+		reasoning,
+		thinkingBudgets,
+	};
 }
 
 /**
