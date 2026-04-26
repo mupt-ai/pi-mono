@@ -309,7 +309,7 @@ export async function prepareAssistantProviderRequest(
 	};
 }
 
-// Drop AgentTool's runtime-only fields (execute, label, etc.) so the request stays serializable.
+// Strip down to the wire schema. PreparedProviderRequest is meant to be plain data hosts can ship across IPC, Temporal activities, or replay logs; AgentTool.execute (a function) would otherwise get silently dropped by JSON or crash structuredClone at the boundary.
 function toWireTool(tool: AgentTool<any>): Tool {
 	return { name: tool.name, description: tool.description, parameters: tool.parameters };
 }
