@@ -23,6 +23,7 @@ import {
 	type AgentTool,
 	initializeLoopState,
 	type LoopState,
+	type StepCommand,
 	stepLoop as stepCoreLoop,
 	type ThinkingLevel,
 	type ToolExecutionRequest,
@@ -240,6 +241,14 @@ type MutableSessionAgentState = AgentState & {
 	pendingToolCalls: Set<string>;
 	errorMessage?: string;
 };
+
+type CoreSessionStepCommand = Extract<
+	SessionStepCommand,
+	| { type: "run_assistant_turn" }
+	| { type: "prepare_tool_calls" }
+	| { type: "complete_tool_call" }
+	| { type: "finalize_turn" }
+>;
 
 // ============================================================================
 // Constants
@@ -1147,24 +1156,32 @@ export class AgentSession {
 		return {
 			phase: "preparing_prompt",
 			terminalStatus: "running",
-			input:
-				typeof input === "string"
-					? {
-							kind: "text",
-							text: input,
-							images: options?.images,
-							expandPromptTemplates: options?.expandPromptTemplates ?? true,
-							source: options?.source ?? "interactive",
-						}
-					: {
-							kind: "messages",
-							messages: Array.isArray(input) ? [...input] : [input],
-						},
+			input: this._createSessionLoopInput(input, options),
 			preparedPromptMessages: [],
 			queue: this._snapshotSessionQueues(),
 			retryAttempt: this._retryAttempt,
 			overflowRecoveryAttempted: this._overflowRecoveryAttempted,
 			lastAssistantMessage: this._lastAssistantMessage,
+		};
+	}
+
+	private _createSessionLoopInput(
+		input: string | AgentMessage | AgentMessage[],
+		options?: PromptOptions,
+	): SessionLoopInput {
+		if (typeof input === "string") {
+			return {
+				kind: "text",
+				text: input,
+				images: options?.images,
+				expandPromptTemplates: options?.expandPromptTemplates ?? true,
+				source: options?.source ?? "interactive",
+			};
+		}
+
+		return {
+			kind: "messages",
+			messages: Array.isArray(input) ? [...input] : [input],
 		};
 	}
 
@@ -1231,16 +1248,12 @@ export class AgentSession {
 					throw new Error(`Cannot ${command.type} without a core loop state`);
 				}
 				const runtime = this._createCoreStepRuntime(sessionEvents);
-				const coreCommand =
-					command.type === "complete_tool_call"
-						? {
-								type: "complete_tool_call" as const,
-								toolCallId: command.toolCallId,
-								result: command.result,
-								isError: command.isError,
-							}
-						: ({ type: command.type } as const);
-				const coreResult = await stepCoreLoop(nextState.coreState, coreCommand, runtime, signal);
+				const coreResult = await stepCoreLoop(
+					nextState.coreState,
+					this._toCoreStepCommand(command),
+					runtime,
+					signal,
+				);
 				coreEvents.push(...coreResult.events);
 				await this._applyCoreStepEvents(coreResult.events, sessionOps);
 				nextState.coreState = coreResult.state;
@@ -1629,6 +1642,22 @@ export class AgentSession {
 		}
 
 		return { handled: false, messages };
+	}
+
+	private _toCoreStepCommand(command: CoreSessionStepCommand): StepCommand {
+		switch (command.type) {
+			case "run_assistant_turn":
+			case "prepare_tool_calls":
+			case "finalize_turn":
+				return { type: command.type };
+			case "complete_tool_call":
+				return {
+					type: "complete_tool_call",
+					toolCallId: command.toolCallId,
+					result: command.result,
+					isError: command.isError,
+				};
+		}
 	}
 
 	private _mapCorePhaseToSessionPhase(phase: LoopState["phase"]): SessionLoopState["phase"] {
