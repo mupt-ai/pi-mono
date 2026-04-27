@@ -2,10 +2,6 @@
 
 ## [Unreleased]
 
-### Fixed
-
-- Fixed stepped loop parity for terminating tool batches and tool-level sequential execution.
-
 ## [0.70.2] - 2026-04-24
 
 ## [0.70.1] - 2026-04-24
