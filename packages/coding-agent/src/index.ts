@@ -185,11 +185,9 @@ export {
 	createLsTool,
 	createReadOnlyTools,
 	createReadTool,
-	createSessionStepRuntime,
 	createWriteTool,
 	initializeSessionLoopState,
 	type PromptTemplate,
-	type SessionStepRuntime,
 	stepSessionLoop,
 } from "./core/sdk.js";
 export {

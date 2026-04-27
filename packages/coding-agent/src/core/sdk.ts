@@ -90,8 +90,6 @@ export interface CreateAgentSessionResult {
 	modelFallbackMessage?: string;
 }
 
-export interface SessionStepRuntime extends CreateAgentSessionResult {}
-
 // Re-exports
 
 export * from "./agent-session-runtime.js";
@@ -400,13 +398,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	};
 }
 
-export async function createSessionStepRuntime(options: CreateAgentSessionOptions = {}): Promise<SessionStepRuntime> {
-	return createAgentSession(options);
-}
-
 export async function initializeSessionLoopState(
 	prompt: string | AgentMessage | AgentMessage[],
-	runtime: SessionStepRuntime,
+	runtime: CreateAgentSessionResult,
 	options?: PromptOptions,
 ): Promise<SessionLoopState> {
 	return runtime.session.initializeSessionLoopState(prompt, options);
@@ -415,7 +409,7 @@ export async function initializeSessionLoopState(
 export async function stepSessionLoop(
 	state: SessionLoopState,
 	command: SessionStepCommand,
-	runtime: SessionStepRuntime,
+	runtime: CreateAgentSessionResult,
 	signal?: AbortSignal,
 ): Promise<SessionStepResult> {
 	return runtime.session.stepSessionLoop(state, command, signal);
