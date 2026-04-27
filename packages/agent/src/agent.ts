@@ -154,13 +154,28 @@ class PendingMessageQueue {
 
 	/** Remove a queued message if present. */
 	remove(message: AgentMessage): void {
-		const index = this.messages.findIndex(
-			(candidate) =>
-				candidate === message || (candidate.timestamp === message.timestamp && candidate.role === message.role),
-		);
+		const index = this.messages.findIndex((candidate) => messagesMatch(candidate, message));
 		if (index !== -1) {
 			this.messages.splice(index, 1);
 		}
+	}
+}
+
+function messagesMatch(candidate: AgentMessage, message: AgentMessage): boolean {
+	if (candidate === message) {
+		return true;
+	}
+	if (candidate.role !== message.role || candidate.timestamp !== message.timestamp) {
+		return false;
+	}
+	return safeJson(candidate) === safeJson(message);
+}
+
+function safeJson(value: unknown): string | undefined {
+	try {
+		return JSON.stringify(value);
+	} catch {
+		return undefined;
 	}
 }
 
