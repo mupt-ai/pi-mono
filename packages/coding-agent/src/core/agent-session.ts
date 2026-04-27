@@ -553,7 +553,7 @@ export class AgentSession {
 
 	private async _processAgentEvent(
 		event: AgentEvent,
-		options: { skipTerminalEffects?: boolean; skipQueuedMessageRemoval?: boolean } = {},
+		options: { deferAgentEndEffects?: boolean; skipQueuedMessageRemoval?: boolean } = {},
 	): Promise<void> {
 		// When a user message starts, check if it's from either queue and remove it BEFORE emitting
 		// This ensures the UI sees the updated queue state
@@ -615,9 +615,10 @@ export class AgentSession {
 			}
 		}
 
-		// Check auto-retry and auto-compaction after agent completes
+		// Check auto-retry and auto-compaction after agent completes.
+		// Stepped mode defers this to the explicit run_post_turn_effects phase.
 		if (event.type === "agent_end" && this._lastAssistantMessage) {
-			if (options.skipTerminalEffects) {
+			if (options.deferAgentEndEffects) {
 				return;
 			}
 			const msg = this._lastAssistantMessage;
@@ -1515,7 +1516,7 @@ export class AgentSession {
 		for (const event of events) {
 			this._updateMutableAgentState(event);
 			await this._processAgentEvent(event, {
-				skipTerminalEffects: true,
+				deferAgentEndEffects: true,
 				skipQueuedMessageRemoval: true,
 			});
 			if (event.type === "message_end") {
