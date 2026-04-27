@@ -146,8 +146,8 @@ export type SessionStepNextAction =
  * `coreEvents` are agent-level events forwarded to UI subscribers,
  * `sessionEvents` are session-level events (compaction, etc.), and
  * `sessionOps` are the persistence writes the host must apply. External work
- * payloads (provider request, tool calls, terminal messages) signal what the
- * host needs to resolve before the next step.
+ * payloads (tool calls, terminal messages) signal what the host needs to
+ * resolve before the next step.
  */
 export interface SessionStepResult {
 	state: SessionLoopState;
@@ -155,7 +155,6 @@ export interface SessionStepResult {
 	sessionEvents: unknown[];
 	sessionOps: SessionPersistenceOp[];
 	nextAction: SessionStepNextAction;
-	providerRequestPayload?: unknown;
 	toolExecutionRequests?: ToolExecutionRequest[];
 	terminalMessages?: AgentMessage[];
 }

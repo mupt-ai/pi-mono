@@ -1188,7 +1188,6 @@ export class AgentSession {
 		const coreEvents: AgentEvent[] = [];
 		const sessionEvents: AgentSessionEvent[] = [];
 		const sessionOps: SessionPersistenceOp[] = [];
-		let providerRequestPayload: unknown;
 		let toolExecutionRequests: ToolExecutionRequest[] | undefined;
 		let terminalMessages: AgentMessage[] | undefined;
 		let nextAction: SessionStepResult["nextAction"];
@@ -1245,7 +1244,6 @@ export class AgentSession {
 				coreEvents.push(...coreResult.events);
 				await this._applyCoreStepEvents(coreResult.events, sessionOps);
 				nextState.coreState = coreResult.state;
-				providerRequestPayload = coreResult.providerRequestPayload;
 				toolExecutionRequests = coreResult.toolExecutionRequests;
 				terminalMessages = coreResult.terminalMessages;
 
@@ -1326,7 +1324,6 @@ export class AgentSession {
 			sessionEvents,
 			sessionOps,
 			nextAction,
-			providerRequestPayload,
 			toolExecutionRequests,
 			terminalMessages,
 		};
@@ -1648,8 +1645,6 @@ export class AgentSession {
 			case "completed":
 			case "failed":
 				return "awaiting_post_turn_effects";
-			case "assistant_streaming":
-				return "awaiting_assistant";
 		}
 	}
 
