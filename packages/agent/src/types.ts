@@ -343,7 +343,6 @@ export interface AgentContext {
 /** Discrete phase of the stepped agent loop. Used to gate which `StepCommand` is valid next. */
 export type LoopPhase =
 	| "awaiting_assistant"
-	| "assistant_streaming"
 	| "awaiting_tool_preflight"
 	| "awaiting_tool_execution"
 	| "awaiting_turn_close"
@@ -387,6 +386,11 @@ export interface CompletedToolCallSnapshot {
  * prompt/steering/follow-up messages plus partially-completed tool work.
  * `stepLoop()` clones this between transitions so callers can persist it
  * verbatim and resume from another process.
+ *
+ * JSON-serializable provided that messages, tool args/results/details, and
+ * provider stream event payloads are JSON-serializable. Hosts using stepped
+ * execution across process boundaries must normalize non-serializable tool
+ * outputs before passing them back into the loop.
  */
 export interface LoopState {
 	systemPrompt: string;
@@ -449,13 +453,13 @@ export type StepLoopNextAction =
  * Includes the cloned-and-updated `LoopState`, any agent events emitted during
  * this step, the next action the host should perform, and any external work
  * payloads (tool calls, terminal messages) that need to be resolved before the
- * next step.
+ * next step. Intended to be JSON-serializable under the same constraints as
+ * `LoopState`.
  */
 export interface StepResult {
 	state: LoopState;
 	events: AgentEvent[];
 	nextAction: StepLoopNextAction;
-	providerRequestPayload?: unknown;
 	toolExecutionRequests?: ToolExecutionRequest[];
 	terminalMessages?: AgentMessage[];
 }
