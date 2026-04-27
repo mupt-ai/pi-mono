@@ -249,14 +249,8 @@ async function runAssistantTurnStep(
 
 	const context = createLoopContext(state, runtime.tools);
 
-	let providerRequestPayload: unknown;
-	const config = wrapConfigWithPayloadCapture(runtime.config, (payload) => {
-		providerRequestPayload = payload;
-	});
-
-	state.phase = "assistant_streaming";
-	const message = await streamAssistantResponse(context, config, signal, emit, runtime.streamFn);
-	return advanceAfterAssistantMessage(state, message, emit, events, { providerRequestPayload });
+	const message = await streamAssistantResponse(context, runtime.config, signal, emit, runtime.streamFn);
+	return advanceAfterAssistantMessage(state, message, emit, events);
 }
 
 async function prepareToolCallsStep(
@@ -278,7 +272,13 @@ async function prepareToolCallsStep(
 		return createStepResult(state, events, "finalize_turn");
 	}
 
-	if (state.toolExecution === "parallel") {
+	const hasSequentialToolCall = state.pendingToolCalls.some(
+		(toolCall) => runtime.tools?.find((tool) => tool.name === toolCall.name)?.executionMode === "sequential",
+	);
+	const effectiveToolExecution =
+		state.toolExecution === "sequential" || hasSequentialToolCall ? "sequential" : "parallel";
+
+	if (effectiveToolExecution === "parallel") {
 		const toolExecutionRequests: ToolExecutionRequest[] = [];
 		while (state.pendingToolCalls.length > 0) {
 			const toolCall = state.pendingToolCalls.shift();
@@ -473,6 +473,9 @@ async function finalizeTurnStep(
 	}
 
 	const hasToolCalls = assistantMessage.content.some((content) => content.type === "toolCall");
+	const toolBatchTerminated =
+		state.completedToolResults.length > 0 &&
+		state.completedToolResults.every((result) => result.result.terminate === true);
 	const toolResultMessages = state.completedToolResults.map((result) => result.message);
 	for (const result of toolResultMessages) {
 		state.messages.push(result);
@@ -488,7 +491,7 @@ async function finalizeTurnStep(
 	state.pendingSteeringMessages = (await runtime.config.getSteeringMessages?.()) || [];
 	clearTurnState(state);
 
-	if (hasToolCalls || state.pendingSteeringMessages.length > 0) {
+	if ((hasToolCalls && !toolBatchTerminated) || state.pendingSteeringMessages.length > 0) {
 		state.phase = "awaiting_assistant";
 		return createStepResult(state, events, "run_assistant_turn");
 	}
@@ -557,16 +560,6 @@ async function injectPendingMessages(state: LoopState, messages: AgentMessage[],
 	}
 }
 
-function wrapConfigWithPayloadCapture(config: AgentLoopConfig, onPayload: (payload: unknown) => void): AgentLoopConfig {
-	return {
-		...config,
-		onPayload: async (payload, model) => {
-			onPayload(payload);
-			return config.onPayload?.(payload, model);
-		},
-	};
-}
-
 function createPreparedToolCallSnapshot(prepared: PreparedToolCall): PreparedToolCallSnapshot {
 	return {
 		toolCallId: prepared.toolCall.id,
@@ -628,9 +621,6 @@ async function advanceAfterAssistantMessage(
 	message: AssistantMessage,
 	emit: AgentEventSink,
 	events: AgentEvent[],
-	options: {
-		providerRequestPayload?: unknown;
-	} = {},
 ): Promise<StepResult> {
 	state.currentAssistantMessage = message;
 	state.newMessages.push(message);
@@ -646,22 +636,17 @@ async function advanceAfterAssistantMessage(
 		await emit({ type: "turn_end", message, toolResults: [] });
 		await emit({ type: "agent_end", messages: state.newMessages });
 		return createStepResult(state, events, "failed", {
-			providerRequestPayload: options.providerRequestPayload,
 			terminalMessages: state.newMessages,
 		});
 	}
 
 	if (state.pendingToolCalls.length > 0) {
 		state.phase = "awaiting_tool_preflight";
-		return createStepResult(state, events, "prepare_tool_calls", {
-			providerRequestPayload: options.providerRequestPayload,
-		});
+		return createStepResult(state, events, "prepare_tool_calls");
 	}
 
 	state.phase = "awaiting_turn_close";
-	return createStepResult(state, events, "finalize_turn", {
-		providerRequestPayload: options.providerRequestPayload,
-	});
+	return createStepResult(state, events, "finalize_turn");
 }
 
 function createStepResult(
@@ -669,7 +654,6 @@ function createStepResult(
 	events: AgentEvent[],
 	nextAction: StepResult["nextAction"],
 	options: {
-		providerRequestPayload?: unknown;
 		toolExecutionRequests?: ToolExecutionRequest[];
 		terminalMessages?: AgentMessage[];
 	} = {},
@@ -678,7 +662,6 @@ function createStepResult(
 		state,
 		events,
 		nextAction,
-		providerRequestPayload: options.providerRequestPayload,
 		toolExecutionRequests: options.toolExecutionRequests,
 		terminalMessages: options.terminalMessages,
 	};
