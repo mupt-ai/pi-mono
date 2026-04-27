@@ -151,6 +151,17 @@ class PendingMessageQueue {
 	load(messages: AgentMessage[]): void {
 		this.messages = messages.slice();
 	}
+
+	/** Remove a queued message if present. */
+	remove(message: AgentMessage): void {
+		const index = this.messages.findIndex(
+			(candidate) =>
+				candidate === message || (candidate.timestamp === message.timestamp && candidate.role === message.role),
+		);
+		if (index !== -1) {
+			this.messages.splice(index, 1);
+		}
+	}
 }
 
 type ActiveRun = {
@@ -312,6 +323,12 @@ export class Agent {
 	/** Replace the follow-up queue contents (used to restore from a snapshot). */
 	loadFollowUpQueue(messages: AgentMessage[]): void {
 		this.followUpQueue.load(messages);
+	}
+
+	/** Remove a message from any pending steering or follow-up queue. */
+	removeQueuedMessage(message: AgentMessage): void {
+		this.steeringQueue.remove(message);
+		this.followUpQueue.remove(message);
 	}
 
 	/** Remove all queued steering and follow-up messages. */
