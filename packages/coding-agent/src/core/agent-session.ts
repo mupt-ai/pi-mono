@@ -36,6 +36,7 @@ import { sleep } from "../utils/sleep.js";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.js";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.js";
 import {
+	type CompactionPreparation,
 	type CompactionResult,
 	calculateContextTokens,
 	collectEntriesForBranchSummary,
@@ -259,6 +260,13 @@ type SessionStepRun = {
 	toolExecutionRequests?: ToolExecutionRequest[];
 	terminalMessages?: AgentMessage[];
 };
+
+type SessionCompactionStepOutcome = { nextAction: "completed" | "run_assistant_turn"; failed: boolean };
+
+type ExtensionCompactionResult =
+	| { type: "none" }
+	| { type: "cancelled" }
+	| { type: "compacted"; result: CompactionResult };
 
 // ============================================================================
 // Constants
@@ -1919,94 +1927,91 @@ export class AgentSession {
 		sessionEvents: AgentSessionEvent[],
 		sessionOps: SessionPersistenceOp[],
 		signal?: AbortSignal,
-	): Promise<{ nextAction: "completed" | "run_assistant_turn"; failed: boolean }> {
+	): Promise<SessionCompactionStepOutcome> {
 		this._emitSessionStepEvent({ type: "compaction_start", reason: request.reason }, sessionEvents);
 
-		if (!this.model) {
-			this._emitSessionStepEvent(
-				{
-					type: "compaction_end",
-					reason: request.reason,
-					result: undefined,
-					aborted: false,
-					willRetry: false,
-				},
-				sessionEvents,
-			);
-			return { nextAction: "completed", failed: request.willRetry };
+		const model = this.model;
+		if (!model) {
+			return this._finishSkippedSessionCompaction(request, sessionEvents);
 		}
 
-		const authResult = await this._modelRegistry.getApiKeyAndHeaders(this.model);
+		const authResult = await this._modelRegistry.getApiKeyAndHeaders(model);
 		if (!authResult.ok || !authResult.apiKey) {
-			this._emitSessionStepEvent(
-				{
-					type: "compaction_end",
-					reason: request.reason,
-					result: undefined,
-					aborted: false,
-					willRetry: false,
-				},
-				sessionEvents,
-			);
-			return { nextAction: "completed", failed: request.willRetry };
+			return this._finishSkippedSessionCompaction(request, sessionEvents);
 		}
 
-		const settings = this.settingsManager.getCompactionSettings();
 		const pathEntries = this.sessionManager.getBranch();
-		const preparation = prepareCompaction(pathEntries, settings);
+		const preparation = prepareCompaction(pathEntries, this.settingsManager.getCompactionSettings());
 		if (!preparation) {
-			this._emitSessionStepEvent(
-				{
-					type: "compaction_end",
-					reason: request.reason,
-					result: undefined,
-					aborted: false,
-					willRetry: false,
-				},
-				sessionEvents,
-			);
-			return { nextAction: "completed", failed: request.willRetry };
+			return this._finishSkippedSessionCompaction(request, sessionEvents);
 		}
 
-		let extensionCompaction: CompactionResult | undefined;
-		let fromExtension = false;
-		if (this._extensionRunner?.hasHandlers("session_before_compact")) {
-			const compactionSignal = signal ?? new AbortController().signal;
-			const extensionResult = (await this._extensionRunner.emit({
-				type: "session_before_compact",
-				preparation,
-				branchEntries: pathEntries,
-				customInstructions: undefined,
-				signal: compactionSignal,
-			})) as SessionBeforeCompactResult | undefined;
-
-			if (extensionResult?.cancel) {
-				this._emitSessionStepEvent(
-					{
-						type: "compaction_end",
-						reason: request.reason,
-						result: undefined,
-						aborted: true,
-						willRetry: false,
-					},
-					sessionEvents,
-				);
-				return { nextAction: "completed", failed: request.willRetry };
-			}
-
-			if (extensionResult?.compaction) {
-				extensionCompaction = extensionResult.compaction;
-				fromExtension = true;
-			}
+		const extensionResult = await this._tryExtensionCompaction(preparation, pathEntries, signal);
+		if (extensionResult.type === "cancelled") {
+			return this._finishSkippedSessionCompaction(request, sessionEvents, true);
 		}
 
-		let result: CompactionResult;
-		if (extensionCompaction) {
-			result = extensionCompaction;
-		} else {
-			result = await compact(preparation, this.model, authResult.apiKey, authResult.headers, undefined, signal);
+		const result =
+			extensionResult.type === "compacted"
+				? extensionResult.result
+				: await compact(preparation, model, authResult.apiKey, authResult.headers, undefined, signal);
+		const fromExtension = extensionResult.type === "compacted";
+
+		return this._finishCompletedSessionCompaction(request, result, fromExtension, sessionEvents, sessionOps);
+	}
+
+	private _finishSkippedSessionCompaction(
+		request: SessionCompactionRequest,
+		sessionEvents: AgentSessionEvent[],
+		aborted = false,
+	): SessionCompactionStepOutcome {
+		this._emitSessionStepEvent(
+			{
+				type: "compaction_end",
+				reason: request.reason,
+				result: undefined,
+				aborted,
+				willRetry: false,
+			},
+			sessionEvents,
+		);
+		return { nextAction: "completed", failed: request.willRetry };
+	}
+
+	private async _tryExtensionCompaction(
+		preparation: CompactionPreparation,
+		pathEntries: ReturnType<SessionManager["getBranch"]>,
+		signal?: AbortSignal,
+	): Promise<ExtensionCompactionResult> {
+		if (!this._extensionRunner?.hasHandlers("session_before_compact")) {
+			return { type: "none" };
 		}
 
+		const compactionSignal = signal ?? new AbortController().signal;
+		const extensionResult = (await this._extensionRunner.emit({
+			type: "session_before_compact",
+			preparation,
+			branchEntries: pathEntries,
+			customInstructions: undefined,
+			signal: compactionSignal,
+		})) as SessionBeforeCompactResult | undefined;
+
+		if (extensionResult?.cancel) {
+			return { type: "cancelled" };
+		}
+		if (extensionResult?.compaction) {
+			return { type: "compacted", result: extensionResult.compaction };
+		}
+		return { type: "none" };
+	}
+
+	private async _finishCompletedSessionCompaction(
+		request: SessionCompactionRequest,
+		result: CompactionResult,
+		fromExtension: boolean,
+		sessionEvents: AgentSessionEvent[],
+		sessionOps: SessionPersistenceOp[],
+	): Promise<SessionCompactionStepOutcome> {
 		this.sessionManager.appendCompaction(
 			result.summary,
 			result.firstKeptEntryId,
@@ -2024,8 +2029,7 @@ export class AgentSession {
 		});
 
 		const newEntries = this.sessionManager.getEntries();
-		const sessionContext = this.sessionManager.buildSessionContext();
-		this.agent.state.messages = sessionContext.messages;
+		this.agent.state.messages = this.sessionManager.buildSessionContext().messages;
 
 		const savedCompactionEntry = newEntries.find(
 			(entry) => entry.type === "compaction" && entry.summary === result.summary,
@@ -2049,9 +2053,8 @@ export class AgentSession {
 			sessionEvents,
 		);
 
-		const hasQueuedMessages = this.agent.hasQueuedMessages();
 		return {
-			nextAction: request.willRetry || hasQueuedMessages ? "run_assistant_turn" : "completed",
+			nextAction: request.willRetry || this.agent.hasQueuedMessages() ? "run_assistant_turn" : "completed",
 			failed: false,
 		};
 	}
