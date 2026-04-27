@@ -17,13 +17,26 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
 import { isContextOverflow, modelsAreEqual, resetApiProviders, supportsXhigh } from "@mariozechner/pi-ai";
-import type { Agent, AgentEvent, AgentMessage, AgentState, AgentTool, ThinkingLevel } from "@mupt-ai/pi-agent-core";
+import {
+	type Agent,
+	type AgentEvent,
+	type AgentMessage,
+	type AgentState,
+	type AgentTool,
+	initializeLoopState,
+	type LoopState,
+	type StepCommand,
+	stepLoop as stepCoreLoop,
+	type ThinkingLevel,
+	type ToolExecutionRequest,
+} from "@mupt-ai/pi-agent-core";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { stripFrontmatter } from "../utils/frontmatter.js";
 import { sleep } from "../utils/sleep.js";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.js";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.js";
 import {
+	type CompactionPreparation,
 	type CompactionResult,
 	calculateContextTokens,
 	collectEntriesForBranchSummary,
@@ -68,6 +81,14 @@ import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.js";
 import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./session-manager.js";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.js";
+import type {
+	SessionCompactionRequest,
+	SessionLoopInput,
+	SessionLoopState,
+	SessionPersistenceOp,
+	SessionStepCommand,
+	SessionStepResult,
+} from "./session-step-types.js";
 import type { SettingsManager } from "./settings-manager.js";
 import type { SlashCommandInfo } from "./slash-commands.js";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.js";
@@ -214,6 +235,38 @@ interface ToolDefinitionEntry {
 	definition: ToolDefinition;
 	sourceInfo: SourceInfo;
 }
+
+type MutableSessionAgentState = AgentState & {
+	isStreaming: boolean;
+	streamingMessage?: AgentMessage;
+	pendingToolCalls: Set<string>;
+	errorMessage?: string;
+};
+
+type CoreSessionStepCommand = Extract<
+	SessionStepCommand,
+	| { type: "run_assistant_turn" }
+	| { type: "prepare_tool_calls" }
+	| { type: "complete_tool_call" }
+	| { type: "finalize_turn" }
+>;
+
+type SessionStepRun = {
+	state: SessionLoopState;
+	coreEvents: AgentEvent[];
+	sessionEvents: AgentSessionEvent[];
+	sessionOps: SessionPersistenceOp[];
+	nextAction?: SessionStepResult["nextAction"];
+	toolExecutionRequests?: ToolExecutionRequest[];
+	terminalMessages?: AgentMessage[];
+};
+
+type SessionCompactionStepOutcome = { nextAction: "completed" | "run_assistant_turn"; failed: boolean };
+
+type ExtensionCompactionResult =
+	| { type: "none" }
+	| { type: "cancelled" }
+	| { type: "compacted"; result: CompactionResult };
 
 // ============================================================================
 // Constants
@@ -485,20 +538,15 @@ export class AgentSession {
 		return undefined;
 	}
 
-	private async _processAgentEvent(event: AgentEvent): Promise<void> {
-		// When a user message starts, check if it's from either queue and remove it BEFORE emitting
-		// This ensures the UI sees the updated queue state
-		if (event.type === "message_start" && event.message.role === "user") {
-			this._overflowRecoveryAttempted = false;
-			const messageText = this._getUserMessageText(event.message);
+	private _removeQueuedMessage(message: AgentMessage): void {
+		if (message.role === "user") {
+			const messageText = this._getUserMessageText(message);
 			if (messageText) {
-				// Check steering queue first
 				const steeringIndex = this._steeringMessages.indexOf(messageText);
 				if (steeringIndex !== -1) {
 					this._steeringMessages.splice(steeringIndex, 1);
 					this._emitQueueUpdate();
 				} else {
-					// Check follow-up queue
 					const followUpIndex = this._followUpMessages.indexOf(messageText);
 					if (followUpIndex !== -1) {
 						this._followUpMessages.splice(followUpIndex, 1);
@@ -506,6 +554,24 @@ export class AgentSession {
 					}
 				}
 			}
+		}
+
+		this.agent.removeQueuedMessage(message);
+	}
+
+	private async _processAgentEvent(
+		event: AgentEvent,
+		options: { deferAgentEndEffects?: boolean; skipQueuedMessageRemoval?: boolean } = {},
+	): Promise<void> {
+		// When a user message starts, check if it's from either queue and remove it BEFORE emitting
+		// This ensures the UI sees the updated queue state
+		if (
+			!options.skipQueuedMessageRemoval &&
+			event.type === "message_start" &&
+			(event.message.role === "user" || event.message.role === "custom")
+		) {
+			this._overflowRecoveryAttempted = false;
+			this._removeQueuedMessage(event.message);
 		}
 
 		// Emit to extensions first
@@ -557,8 +623,12 @@ export class AgentSession {
 			}
 		}
 
-		// Check auto-retry and auto-compaction after agent completes
+		// Check auto-retry and auto-compaction after agent completes.
+		// Stepped mode defers this to the explicit run_post_turn phase.
 		if (event.type === "agent_end" && this._lastAssistantMessage) {
+			if (options.deferAgentEndEffects) {
+				return;
+			}
 			const msg = this._lastAssistantMessage;
 			this._lastAssistantMessage = undefined;
 
@@ -1078,6 +1148,901 @@ export class AgentSession {
 		await this.waitForRetry();
 	}
 
+	private _createQueuedUserMessage(text: string, images?: ImageContent[]): AgentMessage {
+		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
+		if (images) {
+			content.push(...images);
+		}
+		return {
+			role: "user",
+			content,
+			timestamp: Date.now(),
+		};
+	}
+
+	/**
+	 * Build the initial `SessionLoopState` for a stepped run of this session.
+	 *
+	 * Snapshots the current steering/follow-up queues, retry counters, overflow-recovery
+	 * flag, and last assistant message so a host can drive the session loop one
+	 * `stepSessionLoop()` call at a time. The state starts in `"preparing_prompt"` —
+	 * the first step command should be `"prepare_prompt"`.
+	 */
+	async initializeSessionLoopState(
+		input: string | AgentMessage | AgentMessage[],
+		options?: PromptOptions,
+	): Promise<SessionLoopState> {
+		return {
+			phase: "preparing_prompt",
+			input: this._createSessionLoopInput(input, options),
+			preparedPromptMessages: [],
+			queue: this._snapshotSessionQueues(),
+			retryAttempt: this._retryAttempt,
+			overflowRecoveryAttempted: this._overflowRecoveryAttempted,
+			lastAssistantMessage: this._lastAssistantMessage,
+		};
+	}
+
+	private _createSessionLoopInput(
+		input: string | AgentMessage | AgentMessage[],
+		options?: PromptOptions,
+	): SessionLoopInput {
+		if (typeof input === "string") {
+			return {
+				kind: "text",
+				text: input,
+				images: options?.images,
+				expandPromptTemplates: options?.expandPromptTemplates ?? true,
+				source: options?.source ?? "interactive",
+			};
+		}
+
+		return {
+			kind: "messages",
+			messages: Array.isArray(input) ? [...input] : [input],
+		};
+	}
+
+	/**
+	 * Advance the session-level stepped loop by exactly one command.
+	 *
+	 * The supplied `state` is cloned before mutation; the AgentSession's mutable
+	 * fields (queues, retry counters, last assistant message) are temporarily
+	 * restored from it so each step is reproducible from carry-state alone.
+	 * The returned `SessionStepResult` carries the next state, agent/session
+	 * events, persistence operations the host must apply, and any external
+	 * work payload (provider request, tool calls, compaction trigger) the host
+	 * needs to resolve before the next call.
+	 */
+	async stepSessionLoop(
+		state: SessionLoopState,
+		command: SessionStepCommand,
+		signal?: AbortSignal,
+	): Promise<SessionStepResult> {
+		const run = this._createSessionStepRun(state);
+
+		switch (command.type) {
+			case "prepare_prompt":
+				await this._stepPreparePrompt(run);
+				break;
+			case "run_assistant_turn":
+			case "prepare_tool_calls":
+			case "complete_tool_call":
+			case "finalize_turn":
+				await this._stepCoreLoop(run, command, signal);
+				break;
+			case "run_post_turn":
+				await this._stepPostTurnEffects(run, signal);
+				break;
+			case "run_compaction":
+				await this._stepCompaction(run, signal);
+				break;
+		}
+
+		return this._completeSessionStepRun(run);
+	}
+
+	private _createSessionStepRun(state: SessionLoopState): SessionStepRun {
+		const nextState = this._cloneSessionLoopState(state);
+		this._restoreSessionLoopState(nextState);
+		return {
+			state: nextState,
+			coreEvents: [],
+			sessionEvents: [],
+			sessionOps: [],
+		};
+	}
+
+	private _completeSessionStepRun(run: SessionStepRun): SessionStepResult {
+		this._syncSessionLoopState(run.state);
+		if (!run.nextAction) {
+			throw new Error(`Session step did not produce a next action for phase ${run.state.phase}`);
+		}
+		return {
+			state: run.state,
+			coreEvents: run.coreEvents,
+			sessionEvents: run.sessionEvents,
+			sessionOps: run.sessionOps,
+			nextAction: run.nextAction,
+			toolExecutionRequests: run.toolExecutionRequests,
+			terminalMessages: run.terminalMessages,
+		};
+	}
+
+	private async _stepPreparePrompt(run: SessionStepRun): Promise<void> {
+		const { state } = run;
+		if (state.phase !== "preparing_prompt") {
+			throw new Error(`Cannot prepare_prompt while session phase is ${state.phase}`);
+		}
+
+		const prepared = await this._prepareSessionPromptMessages(state.input);
+		if (prepared.handled) {
+			state.phase = "completed";
+			run.nextAction = "completed";
+			return;
+		}
+
+		state.preparedPromptMessages = prepared.messages.slice();
+		state.coreState = initializeLoopState(
+			prepared.messages,
+			{
+				systemPrompt: this.agent.state.systemPrompt,
+				messages: this.agent.state.messages,
+				tools: this.agent.state.tools,
+			},
+			{ toolExecution: this.agent.toolExecution },
+		);
+		state.phase = "awaiting_assistant";
+		run.nextAction = "run_assistant_turn";
+	}
+
+	private async _stepCoreLoop(
+		run: SessionStepRun,
+		command: CoreSessionStepCommand,
+		signal?: AbortSignal,
+	): Promise<void> {
+		if (!run.state.coreState) {
+			throw new Error(`Cannot ${command.type} without a core loop state`);
+		}
+
+		const coreResult = await stepCoreLoop(
+			run.state.coreState,
+			this._toCoreStepCommand(command),
+			this._createCoreStepRuntime(run.sessionEvents),
+			signal,
+		);
+		run.coreEvents.push(...coreResult.events);
+		await this._applyCoreStepEvents(coreResult.events, run.sessionOps);
+		run.state.coreState = coreResult.state;
+		run.toolExecutionRequests = coreResult.toolExecutionRequests;
+		run.terminalMessages = coreResult.terminalMessages;
+
+		if (this._coreStepNeedsPostTurnEffects(command, coreResult.nextAction)) {
+			run.state.phase = "awaiting_post_turn";
+			run.nextAction = "run_post_turn";
+			return;
+		}
+
+		run.state.phase = this._mapCorePhaseToSessionPhase(coreResult.state.phase);
+		run.nextAction = this._mapCoreNextActionToSessionNextAction(coreResult.nextAction);
+	}
+
+	private _coreStepNeedsPostTurnEffects(
+		command: CoreSessionStepCommand,
+		nextAction: Awaited<ReturnType<typeof stepCoreLoop>>["nextAction"],
+	): boolean {
+		return (
+			(command.type === "run_assistant_turn" && nextAction === "failed") ||
+			(command.type === "finalize_turn" && nextAction === "check_follow_up")
+		);
+	}
+
+	private async _stepPostTurnEffects(run: SessionStepRun, signal?: AbortSignal): Promise<void> {
+		if (run.state.phase !== "awaiting_post_turn" || !run.state.coreState) {
+			throw new Error(`Cannot run_post_turn while session phase is ${run.state.phase}`);
+		}
+
+		if (await this._tryResumeFollowUpTurn(run, signal)) {
+			return;
+		}
+
+		const postTurnResult = this._evaluatePostTurnState(run.state, run.sessionEvents);
+		run.state.phase = postTurnResult.phase;
+		run.state.compactionRequest = postTurnResult.compactionRequest;
+		run.nextAction = postTurnResult.nextAction;
+	}
+
+	private async _tryResumeFollowUpTurn(run: SessionStepRun, signal?: AbortSignal): Promise<boolean> {
+		if (run.state.coreState?.phase !== "awaiting_follow_up") {
+			return false;
+		}
+
+		const followUpResult = await stepCoreLoop(
+			run.state.coreState,
+			{ type: "check_follow_up" },
+			this._createCoreStepRuntime(run.sessionEvents),
+			signal,
+		);
+		run.coreEvents.push(...followUpResult.events);
+		await this._applyCoreStepEvents(followUpResult.events, run.sessionOps);
+		run.state.coreState = followUpResult.state;
+		run.terminalMessages = followUpResult.terminalMessages;
+
+		if (followUpResult.nextAction !== "run_assistant_turn") {
+			return false;
+		}
+
+		run.state.phase = "awaiting_assistant";
+		run.nextAction = "run_assistant_turn";
+		return true;
+	}
+
+	private async _stepCompaction(run: SessionStepRun, signal?: AbortSignal): Promise<void> {
+		if (run.state.phase !== "awaiting_compaction" || !run.state.compactionRequest) {
+			throw new Error(`Cannot run_compaction while session phase is ${run.state.phase}`);
+		}
+
+		const compactionResult = await this._runSessionCompactionStep(
+			run.state.compactionRequest,
+			run.sessionEvents,
+			run.sessionOps,
+			signal,
+		);
+		run.state.compactionRequest = undefined;
+		run.state.lastAssistantMessage = undefined;
+
+		if (compactionResult.nextAction === "run_assistant_turn") {
+			run.state.coreState = this._createContinuationLoopState();
+			run.state.phase = "awaiting_assistant";
+			run.nextAction = "run_assistant_turn";
+			return;
+		}
+
+		run.state.phase = compactionResult.failed ? "failed" : "completed";
+		run.nextAction = compactionResult.failed ? "failed" : "completed";
+	}
+
+	private _cloneSessionLoopState(state: SessionLoopState): SessionLoopState {
+		return {
+			...state,
+			preparedPromptMessages: state.preparedPromptMessages.slice(),
+			coreState: state.coreState
+				? {
+						...state.coreState,
+						messages: state.coreState.messages.slice(),
+						newMessages: state.coreState.newMessages.slice(),
+						pendingPromptMessages: state.coreState.pendingPromptMessages.slice(),
+						pendingSteeringMessages: state.coreState.pendingSteeringMessages.slice(),
+						pendingFollowUpMessages: state.coreState.pendingFollowUpMessages.slice(),
+						pendingToolCalls: state.coreState.pendingToolCalls.slice(),
+						preparedToolCalls: state.coreState.preparedToolCalls.map((prepared) => ({ ...prepared })),
+						executedToolCalls: state.coreState.executedToolCalls.map((executed) => ({ ...executed })),
+						completedToolResults: state.coreState.completedToolResults.map((completed) => ({ ...completed })),
+					}
+				: undefined,
+			queue: {
+				steering: state.queue.steering.slice(),
+				followUp: state.queue.followUp.slice(),
+				steeringLabels: state.queue.steeringLabels.slice(),
+				followUpLabels: state.queue.followUpLabels.slice(),
+				pendingNextTurnMessages: state.queue.pendingNextTurnMessages.slice(),
+			},
+		};
+	}
+
+	private _snapshotSessionQueues(): SessionLoopState["queue"] {
+		return {
+			steering: this.agent.peekSteeringQueue(),
+			followUp: this.agent.peekFollowUpQueue(),
+			steeringLabels: this._steeringMessages.slice(),
+			followUpLabels: this._followUpMessages.slice(),
+			pendingNextTurnMessages: this._pendingNextTurnMessages.slice(),
+		};
+	}
+
+	private _restoreSessionLoopState(state: SessionLoopState): void {
+		this.agent.loadSteeringQueue(state.queue.steering);
+		this.agent.loadFollowUpQueue(state.queue.followUp);
+		this._steeringMessages = state.queue.steeringLabels.slice();
+		this._followUpMessages = state.queue.followUpLabels.slice();
+		this._pendingNextTurnMessages = state.queue.pendingNextTurnMessages.slice() as CustomMessage[];
+		this._retryAttempt = state.retryAttempt;
+		this._overflowRecoveryAttempted = state.overflowRecoveryAttempted;
+		this._lastAssistantMessage = state.lastAssistantMessage;
+
+		const mutableState = this.agent.state as MutableSessionAgentState;
+		mutableState.isStreaming = !this._isTerminalSessionPhase(state.phase) && state.phase !== "preparing_prompt";
+		mutableState.streamingMessage = undefined;
+		mutableState.pendingToolCalls = new Set<string>();
+		mutableState.errorMessage = undefined;
+		if (state.coreState) {
+			this.agent.state.messages = state.coreState.messages;
+		}
+	}
+
+	private _syncSessionLoopState(state: SessionLoopState): void {
+		state.queue = this._snapshotSessionQueues();
+		state.retryAttempt = this._retryAttempt;
+		state.overflowRecoveryAttempted = this._overflowRecoveryAttempted;
+		state.lastAssistantMessage = this._lastAssistantMessage;
+		if (state.coreState) {
+			this.agent.state.messages = state.coreState.messages;
+		}
+		const mutableState = this.agent.state as MutableSessionAgentState;
+		mutableState.isStreaming = !this._isTerminalSessionPhase(state.phase);
+	}
+
+	private _emitSessionStepEvent(event: AgentSessionEvent, sessionEvents: AgentSessionEvent[]): void {
+		sessionEvents.push(event);
+		this._emit(event);
+	}
+
+	private _updateMutableAgentState(event: AgentEvent): void {
+		const state = this.agent.state as MutableSessionAgentState;
+		switch (event.type) {
+			case "message_start":
+				state.streamingMessage = event.message;
+				break;
+			case "message_update":
+				state.streamingMessage = event.message;
+				break;
+			case "message_end":
+				state.streamingMessage = undefined;
+				state.messages = [...state.messages, event.message];
+				break;
+			case "tool_execution_start": {
+				const pendingToolCalls = new Set(state.pendingToolCalls);
+				pendingToolCalls.add(event.toolCallId);
+				state.pendingToolCalls = pendingToolCalls;
+				break;
+			}
+			case "tool_execution_end": {
+				const pendingToolCalls = new Set(state.pendingToolCalls);
+				pendingToolCalls.delete(event.toolCallId);
+				state.pendingToolCalls = pendingToolCalls;
+				break;
+			}
+			case "turn_end":
+				if (event.message.role === "assistant" && event.message.errorMessage) {
+					state.errorMessage = event.message.errorMessage;
+				}
+				break;
+			case "agent_end":
+				state.streamingMessage = undefined;
+				break;
+			default:
+				break;
+		}
+	}
+
+	private async _applyCoreStepEvents(events: AgentEvent[], sessionOps: SessionPersistenceOp[]): Promise<void> {
+		for (const event of events) {
+			this._updateMutableAgentState(event);
+			await this._processAgentEvent(event, {
+				deferAgentEndEffects: true,
+				skipQueuedMessageRemoval: true,
+			});
+			if (event.type === "message_end") {
+				if (event.message.role === "custom") {
+					sessionOps.push({
+						type: "append_custom_message",
+						customType: event.message.customType,
+						content: event.message.content,
+						display: event.message.display,
+						details: event.message.details,
+					});
+				} else if (
+					event.message.role === "user" ||
+					event.message.role === "assistant" ||
+					event.message.role === "toolResult"
+				) {
+					sessionOps.push({ type: "append_message", message: event.message });
+				}
+			}
+		}
+	}
+
+	private _createCoreStepRuntime(sessionEvents: AgentSessionEvent[]) {
+		return {
+			config: {
+				model: this.agent.state.model,
+				reasoning: this.agent.state.thinkingLevel === "off" ? undefined : this.agent.state.thinkingLevel,
+				sessionId: this.agent.sessionId,
+				onPayload: this.agent.onPayload,
+				transport: this.agent.transport,
+				thinkingBudgets: this.agent.thinkingBudgets,
+				maxRetryDelayMs: this.agent.maxRetryDelayMs,
+				toolExecution: this.agent.toolExecution,
+				beforeToolCall: this.agent.beforeToolCall,
+				afterToolCall: this.agent.afterToolCall,
+				convertToLlm: this.agent.convertToLlm,
+				transformContext: this.agent.transformContext,
+				getApiKey: this.agent.getApiKey,
+				getSteeringMessages: async () => this._drainTrackedQueue("steering", sessionEvents),
+				getFollowUpMessages: async () => this._drainTrackedQueue("followUp", sessionEvents),
+			},
+			tools: this.agent.state.tools,
+			streamFn: this.agent.streamFn,
+		};
+	}
+
+	private async _drainTrackedQueue(
+		kind: "steering" | "followUp",
+		sessionEvents: AgentSessionEvent[],
+	): Promise<AgentMessage[]> {
+		const drained = kind === "steering" ? this.agent.drainSteeringQueue() : this.agent.drainFollowUpQueue();
+		if (drained.length === 0) {
+			return [];
+		}
+
+		const labels = kind === "steering" ? this._steeringMessages : this._followUpMessages;
+		let didUpdate = false;
+		for (const message of drained) {
+			if (message.role !== "user") {
+				continue;
+			}
+			const text = this._getUserMessageText(message);
+			if (!text) {
+				continue;
+			}
+			const index = labels.indexOf(text);
+			if (index !== -1) {
+				labels.splice(index, 1);
+				didUpdate = true;
+			}
+		}
+
+		if (didUpdate) {
+			this._emitSessionStepEvent(
+				{
+					type: "queue_update",
+					steering: [...this._steeringMessages],
+					followUp: [...this._followUpMessages],
+				},
+				sessionEvents,
+			);
+		}
+		return drained;
+	}
+
+	private async _prepareSessionPromptMessages(
+		input: SessionLoopInput,
+	): Promise<{ handled: true } | { handled: false; messages: AgentMessage[] }> {
+		if (input.kind === "messages") {
+			this._flushPendingBashMessages();
+			return { handled: false, messages: input.messages.slice() };
+		}
+
+		if (input.expandPromptTemplates && input.text.startsWith("/")) {
+			const handled = await this._tryExecuteExtensionCommand(input.text);
+			if (handled) {
+				return { handled: true };
+			}
+		}
+
+		let currentText = input.text;
+		let currentImages = input.images;
+		if (this._extensionRunner?.hasHandlers("input")) {
+			const inputResult = await this._extensionRunner.emitInput(currentText, currentImages, input.source);
+			if (inputResult.action === "handled") {
+				return { handled: true };
+			}
+			if (inputResult.action === "transform") {
+				currentText = inputResult.text;
+				currentImages = inputResult.images ?? currentImages;
+			}
+		}
+
+		let expandedText = currentText;
+		if (input.expandPromptTemplates) {
+			expandedText = this._expandSkillCommand(expandedText);
+			expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
+		}
+
+		this._flushPendingBashMessages();
+		if (!this.model) {
+			throw new Error(formatNoModelSelectedMessage());
+		}
+
+		if (!this._modelRegistry.hasConfiguredAuth(this.model)) {
+			const isOAuth = this._modelRegistry.isUsingOAuth(this.model);
+			if (isOAuth) {
+				throw new Error(
+					`Authentication failed for "${this.model.provider}". ` +
+						`Credentials may have expired or network is unavailable. ` +
+						`Run '/login ${this.model.provider}' to re-authenticate.`,
+				);
+			}
+			throw new Error(formatNoApiKeyFoundMessage(this.model.provider));
+		}
+
+		const lastAssistant = this._findLastAssistantMessage();
+		if (lastAssistant) {
+			await this._checkCompaction(lastAssistant, false);
+		}
+
+		const messages: AgentMessage[] = [];
+		const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];
+		if (currentImages) {
+			userContent.push(...currentImages);
+		}
+		messages.push({
+			role: "user",
+			content: userContent,
+			timestamp: Date.now(),
+		});
+
+		for (const message of this._pendingNextTurnMessages) {
+			messages.push(message);
+		}
+		this._pendingNextTurnMessages = [];
+
+		if (this._extensionRunner) {
+			const result = await this._extensionRunner.emitBeforeAgentStart(
+				expandedText,
+				currentImages,
+				this._baseSystemPrompt,
+				this._baseSystemPromptOptions,
+			);
+			if (result?.messages) {
+				for (const message of result.messages) {
+					messages.push({
+						role: "custom",
+						customType: message.customType,
+						content: message.content,
+						display: message.display,
+						details: message.details,
+						timestamp: Date.now(),
+					});
+				}
+			}
+			this.agent.state.systemPrompt = result?.systemPrompt ?? this._baseSystemPrompt;
+		} else {
+			this.agent.state.systemPrompt = this._baseSystemPrompt;
+		}
+
+		return { handled: false, messages };
+	}
+
+	private _toCoreStepCommand(command: CoreSessionStepCommand): StepCommand {
+		switch (command.type) {
+			case "run_assistant_turn":
+			case "prepare_tool_calls":
+			case "finalize_turn":
+				return { type: command.type };
+			case "complete_tool_call":
+				return {
+					type: "complete_tool_call",
+					toolCallId: command.toolCallId,
+					result: command.result,
+					isError: command.isError,
+				};
+		}
+	}
+
+	private _isTerminalSessionPhase(phase: SessionLoopState["phase"]): boolean {
+		return phase === "completed" || phase === "failed";
+	}
+
+	private _mapCorePhaseToSessionPhase(phase: LoopState["phase"]): SessionLoopState["phase"] {
+		if (phase === "awaiting_follow_up" || phase === "completed" || phase === "failed") {
+			return "awaiting_post_turn";
+		}
+		return phase;
+	}
+
+	private _mapCoreNextActionToSessionNextAction(
+		nextAction: Awaited<ReturnType<typeof stepCoreLoop>>["nextAction"],
+	): SessionStepResult["nextAction"] {
+		switch (nextAction) {
+			case "run_assistant_turn":
+				return "run_assistant_turn";
+			case "prepare_tool_calls":
+				return "prepare_tool_calls";
+			case "complete_tool_call":
+				return "complete_tool_call";
+			case "finalize_turn":
+				return "finalize_turn";
+			case "check_follow_up":
+				return "run_post_turn";
+			case "completed":
+				return "completed";
+			case "failed":
+				return "run_post_turn";
+		}
+	}
+
+	private _evaluatePostTurnState(
+		state: SessionLoopState,
+		sessionEvents: AgentSessionEvent[],
+	): {
+		phase: SessionLoopState["phase"];
+		compactionRequest?: SessionCompactionRequest;
+		nextAction: SessionStepResult["nextAction"];
+	} {
+		const lastAssistant = this._lastAssistantMessage;
+		if (lastAssistant) {
+			const settings = this.settingsManager.getRetrySettings();
+			if (this._isRetryableError(lastAssistant) && settings.enabled) {
+				const nextAttempt = this._retryAttempt + 1;
+				if (nextAttempt <= settings.maxRetries) {
+					const delayMs = settings.baseDelayMs * 2 ** (nextAttempt - 1);
+					this._retryAttempt = nextAttempt;
+					this._emitSessionStepEvent(
+						{
+							type: "auto_retry_start",
+							attempt: this._retryAttempt,
+							maxAttempts: settings.maxRetries,
+							delayMs,
+							errorMessage: lastAssistant.errorMessage || "Unknown error",
+						},
+						sessionEvents,
+					);
+					this._removeLastAssistantFromContext(state);
+					state.coreState = this._createContinuationLoopState();
+					return {
+						phase: "awaiting_assistant",
+						nextAction: "run_assistant_turn",
+					};
+				}
+
+				this._emitSessionStepEvent(
+					{
+						type: "auto_retry_end",
+						success: false,
+						attempt: this._retryAttempt,
+						finalError: lastAssistant.errorMessage,
+					},
+					sessionEvents,
+				);
+				this._retryAttempt = 0;
+			}
+
+			const compactionRequest = this._determineAutoCompactionRequest(lastAssistant);
+			if (compactionRequest) {
+				if (compactionRequest.reason === "overflow" && compactionRequest.willRetry) {
+					this._removeLastAssistantFromContext(state);
+				}
+				return {
+					phase: "awaiting_compaction",
+					compactionRequest,
+					nextAction: "run_compaction",
+				};
+			}
+		}
+
+		if (state.coreState?.terminalStatus === "failed") {
+			return {
+				phase: "failed",
+				nextAction: "failed",
+			};
+		}
+		return {
+			phase: "completed",
+			nextAction: "completed",
+		};
+	}
+
+	private _removeLastAssistantFromContext(state: SessionLoopState): void {
+		const currentMessages = state.coreState?.messages ?? this.agent.state.messages;
+		if (currentMessages.length > 0 && currentMessages[currentMessages.length - 1]?.role === "assistant") {
+			const trimmedMessages = currentMessages.slice(0, -1);
+			if (state.coreState) {
+				state.coreState.messages = trimmedMessages;
+			}
+			this.agent.state.messages = trimmedMessages;
+		}
+	}
+
+	private _createContinuationLoopState(): LoopState {
+		return initializeLoopState(
+			[],
+			{
+				systemPrompt: this.agent.state.systemPrompt,
+				messages: this.agent.state.messages,
+				tools: this.agent.state.tools,
+			},
+			{ toolExecution: this.agent.toolExecution },
+		);
+	}
+
+	private _determineAutoCompactionRequest(
+		assistantMessage: AssistantMessage,
+		skipAbortedCheck = true,
+	): SessionCompactionRequest | undefined {
+		const settings = this.settingsManager.getCompactionSettings();
+		if (!settings.enabled) return undefined;
+
+		if (skipAbortedCheck && assistantMessage.stopReason === "aborted") return undefined;
+
+		const contextWindow = this.model?.contextWindow ?? 0;
+		const sameModel =
+			this.model && assistantMessage.provider === this.model.provider && assistantMessage.model === this.model.id;
+
+		const compactionEntry = getLatestCompactionEntry(this.sessionManager.getBranch());
+		const assistantIsFromBeforeCompaction =
+			compactionEntry !== null && assistantMessage.timestamp <= new Date(compactionEntry.timestamp).getTime();
+		if (assistantIsFromBeforeCompaction) {
+			return undefined;
+		}
+
+		if (sameModel && isContextOverflow(assistantMessage, contextWindow)) {
+			if (this._overflowRecoveryAttempted) {
+				this._emit({
+					type: "compaction_end",
+					reason: "overflow",
+					result: undefined,
+					aborted: false,
+					willRetry: false,
+					errorMessage:
+						"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.",
+				});
+				return undefined;
+			}
+			this._overflowRecoveryAttempted = true;
+			return { reason: "overflow", willRetry: true };
+		}
+
+		let contextTokens: number;
+		if (assistantMessage.stopReason === "error") {
+			const estimate = estimateContextTokens(this.agent.state.messages);
+			if (estimate.lastUsageIndex === null) return undefined;
+			const usageMsg = this.agent.state.messages[estimate.lastUsageIndex];
+			if (
+				compactionEntry &&
+				usageMsg.role === "assistant" &&
+				(usageMsg as AssistantMessage).timestamp <= new Date(compactionEntry.timestamp).getTime()
+			) {
+				return undefined;
+			}
+			contextTokens = estimate.tokens;
+		} else {
+			contextTokens = calculateContextTokens(assistantMessage.usage);
+		}
+
+		if (!shouldCompact(contextTokens, contextWindow, settings)) {
+			return undefined;
+		}
+		return { reason: "threshold", willRetry: false };
+	}
+
+	private async _runSessionCompactionStep(
+		request: SessionCompactionRequest,
+		sessionEvents: AgentSessionEvent[],
+		sessionOps: SessionPersistenceOp[],
+		signal?: AbortSignal,
+	): Promise<SessionCompactionStepOutcome> {
+		this._emitSessionStepEvent({ type: "compaction_start", reason: request.reason }, sessionEvents);
+
+		const model = this.model;
+		if (!model) {
+			return this._finishSkippedSessionCompaction(request, sessionEvents);
+		}
+
+		const authResult = await this._modelRegistry.getApiKeyAndHeaders(model);
+		if (!authResult.ok || !authResult.apiKey) {
+			return this._finishSkippedSessionCompaction(request, sessionEvents);
+		}
+
+		const pathEntries = this.sessionManager.getBranch();
+		const preparation = prepareCompaction(pathEntries, this.settingsManager.getCompactionSettings());
+		if (!preparation) {
+			return this._finishSkippedSessionCompaction(request, sessionEvents);
+		}
+
+		const extensionResult = await this._tryExtensionCompaction(preparation, pathEntries, signal);
+		if (extensionResult.type === "cancelled") {
+			return this._finishSkippedSessionCompaction(request, sessionEvents, true);
+		}
+
+		const result =
+			extensionResult.type === "compacted"
+				? extensionResult.result
+				: await compact(preparation, model, authResult.apiKey, authResult.headers, undefined, signal);
+		const fromExtension = extensionResult.type === "compacted";
+
+		return this._finishCompletedSessionCompaction(request, result, fromExtension, sessionEvents, sessionOps);
+	}
+
+	private _finishSkippedSessionCompaction(
+		request: SessionCompactionRequest,
+		sessionEvents: AgentSessionEvent[],
+		aborted = false,
+	): SessionCompactionStepOutcome {
+		this._emitSessionStepEvent(
+			{
+				type: "compaction_end",
+				reason: request.reason,
+				result: undefined,
+				aborted,
+				willRetry: false,
+			},
+			sessionEvents,
+		);
+		return { nextAction: "completed", failed: request.willRetry };
+	}
+
+	private async _tryExtensionCompaction(
+		preparation: CompactionPreparation,
+		pathEntries: ReturnType<SessionManager["getBranch"]>,
+		signal?: AbortSignal,
+	): Promise<ExtensionCompactionResult> {
+		if (!this._extensionRunner?.hasHandlers("session_before_compact")) {
+			return { type: "none" };
+		}
+
+		const compactionSignal = signal ?? new AbortController().signal;
+		const extensionResult = (await this._extensionRunner.emit({
+			type: "session_before_compact",
+			preparation,
+			branchEntries: pathEntries,
+			customInstructions: undefined,
+			signal: compactionSignal,
+		})) as SessionBeforeCompactResult | undefined;
+
+		if (extensionResult?.cancel) {
+			return { type: "cancelled" };
+		}
+		if (extensionResult?.compaction) {
+			return { type: "compacted", result: extensionResult.compaction };
+		}
+		return { type: "none" };
+	}
+
+	private async _finishCompletedSessionCompaction(
+		request: SessionCompactionRequest,
+		result: CompactionResult,
+		fromExtension: boolean,
+		sessionEvents: AgentSessionEvent[],
+		sessionOps: SessionPersistenceOp[],
+	): Promise<SessionCompactionStepOutcome> {
+		this.sessionManager.appendCompaction(
+			result.summary,
+			result.firstKeptEntryId,
+			result.tokensBefore,
+			result.details,
+			fromExtension,
+		);
+		sessionOps.push({
+			type: "append_compaction",
+			summary: result.summary,
+			firstKeptEntryId: result.firstKeptEntryId,
+			tokensBefore: result.tokensBefore,
+			details: result.details,
+			fromExtension,
+		});
+
+		const newEntries = this.sessionManager.getEntries();
+		this.agent.state.messages = this.sessionManager.buildSessionContext().messages;
+
+		const savedCompactionEntry = newEntries.find(
+			(entry) => entry.type === "compaction" && entry.summary === result.summary,
+		) as CompactionEntry | undefined;
+		if (this._extensionRunner && savedCompactionEntry) {
+			await this._extensionRunner.emit({
+				type: "session_compact",
+				compactionEntry: savedCompactionEntry,
+				fromExtension,
+			});
+		}
+
+		this._emitSessionStepEvent(
+			{
+				type: "compaction_end",
+				reason: request.reason,
+				result,
+				aborted: false,
+				willRetry: request.willRetry,
+			},
+			sessionEvents,
+		);
+
+		return {
+			nextAction: request.willRetry || this.agent.hasQueuedMessages() ? "run_assistant_turn" : "completed",
+			failed: false,
+		};
+	}
+
 	/**
 	 * Try to execute an extension command. Returns true if command was found and executed.
 	 */
@@ -1185,15 +2150,7 @@ export class AgentSession {
 	private async _queueSteer(text: string, images?: ImageContent[]): Promise<void> {
 		this._steeringMessages.push(text);
 		this._emitQueueUpdate();
-		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
-		if (images) {
-			content.push(...images);
-		}
-		this.agent.steer({
-			role: "user",
-			content,
-			timestamp: Date.now(),
-		});
+		this.agent.steer(this._createQueuedUserMessage(text, images));
 	}
 
 	/**
@@ -1202,15 +2159,7 @@ export class AgentSession {
 	private async _queueFollowUp(text: string, images?: ImageContent[]): Promise<void> {
 		this._followUpMessages.push(text);
 		this._emitQueueUpdate();
-		const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
-		if (images) {
-			content.push(...images);
-		}
-		this.agent.followUp({
-			role: "user",
-			content,
-			timestamp: Date.now(),
-		});
+		this.agent.followUp(this._createQueuedUserMessage(text, images));
 	}
 
 	/**
