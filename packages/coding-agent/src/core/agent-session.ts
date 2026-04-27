@@ -250,6 +250,16 @@ type CoreSessionStepCommand = Extract<
 	| { type: "finalize_turn" }
 >;
 
+type SessionStepRun = {
+	state: SessionLoopState;
+	coreEvents: AgentEvent[];
+	sessionEvents: AgentSessionEvent[];
+	sessionOps: SessionPersistenceOp[];
+	nextAction?: SessionStepResult["nextAction"];
+	toolExecutionRequests?: ToolExecutionRequest[];
+	terminalMessages?: AgentMessage[];
+};
+
 // ============================================================================
 // Constants
 // ============================================================================
@@ -1201,145 +1211,191 @@ export class AgentSession {
 		command: SessionStepCommand,
 		signal?: AbortSignal,
 	): Promise<SessionStepResult> {
-		const nextState = this._cloneSessionLoopState(state);
-		const coreEvents: AgentEvent[] = [];
-		const sessionEvents: AgentSessionEvent[] = [];
-		const sessionOps: SessionPersistenceOp[] = [];
-		let toolExecutionRequests: ToolExecutionRequest[] | undefined;
-		let terminalMessages: AgentMessage[] | undefined;
-		let nextAction: SessionStepResult["nextAction"];
-
-		this._restoreSessionLoopState(nextState);
+		const run = this._createSessionStepRun(state);
 
 		switch (command.type) {
-			case "prepare_prompt": {
-				if (nextState.phase !== "preparing_prompt") {
-					throw new Error(`Cannot prepare_prompt while session phase is ${nextState.phase}`);
-				}
-
-				const prepared = await this._prepareSessionPromptMessages(nextState.input);
-				if (prepared.handled) {
-					nextState.phase = "completed";
-					nextState.terminalStatus = "completed";
-					nextAction = "completed";
-					break;
-				}
-
-				nextState.preparedPromptMessages = prepared.messages.slice();
-				nextState.coreState = initializeLoopState(
-					prepared.messages,
-					{
-						systemPrompt: this.agent.state.systemPrompt,
-						messages: this.agent.state.messages,
-						tools: this.agent.state.tools,
-					},
-					{ toolExecution: this.agent.toolExecution },
-				);
-				nextState.phase = "awaiting_assistant";
-				nextAction = "run_assistant_turn";
+			case "prepare_prompt":
+				await this._stepPreparePrompt(run);
 				break;
-			}
-
 			case "run_assistant_turn":
 			case "prepare_tool_calls":
 			case "complete_tool_call":
-			case "finalize_turn": {
-				if (!nextState.coreState) {
-					throw new Error(`Cannot ${command.type} without a core loop state`);
-				}
-				const runtime = this._createCoreStepRuntime(sessionEvents);
-				const coreResult = await stepCoreLoop(
-					nextState.coreState,
-					this._toCoreStepCommand(command),
-					runtime,
-					signal,
-				);
-				coreEvents.push(...coreResult.events);
-				await this._applyCoreStepEvents(coreResult.events, sessionOps);
-				nextState.coreState = coreResult.state;
-				toolExecutionRequests = coreResult.toolExecutionRequests;
-				terminalMessages = coreResult.terminalMessages;
-
-				if (command.type === "run_assistant_turn" && coreResult.nextAction === "failed") {
-					nextState.phase = "awaiting_post_turn_effects";
-					nextAction = "run_post_turn_effects";
-				} else if (command.type === "finalize_turn" && coreResult.nextAction === "check_follow_up") {
-					nextState.phase = "awaiting_post_turn_effects";
-					nextAction = "run_post_turn_effects";
-				} else {
-					nextState.phase = this._mapCorePhaseToSessionPhase(coreResult.state.phase);
-					nextAction = this._mapCoreNextActionToSessionNextAction(coreResult.nextAction);
-				}
+			case "finalize_turn":
+				await this._stepCoreLoop(run, command, signal);
 				break;
-			}
-
-			case "run_post_turn_effects": {
-				if (nextState.phase !== "awaiting_post_turn_effects" || !nextState.coreState) {
-					throw new Error(`Cannot run_post_turn_effects while session phase is ${nextState.phase}`);
-				}
-
-				if (nextState.coreState.phase === "awaiting_follow_up") {
-					const followUpResult = await stepCoreLoop(
-						nextState.coreState,
-						{ type: "check_follow_up" },
-						this._createCoreStepRuntime(sessionEvents),
-						signal,
-					);
-					coreEvents.push(...followUpResult.events);
-					await this._applyCoreStepEvents(followUpResult.events, sessionOps);
-					nextState.coreState = followUpResult.state;
-					terminalMessages = followUpResult.terminalMessages;
-					if (followUpResult.nextAction === "run_assistant_turn") {
-						nextState.phase = "awaiting_assistant";
-						nextAction = "run_assistant_turn";
-						break;
-					}
-				}
-
-				const postTurnResult = this._evaluatePostTurnState(nextState, sessionEvents);
-				nextState.phase = postTurnResult.phase;
-				nextState.terminalStatus = postTurnResult.terminalStatus;
-				nextState.compactionRequest = postTurnResult.compactionRequest;
-				nextAction = postTurnResult.nextAction;
+			case "run_post_turn_effects":
+				await this._stepPostTurnEffects(run, signal);
 				break;
-			}
-
-			case "run_compaction": {
-				if (nextState.phase !== "awaiting_compaction" || !nextState.compactionRequest) {
-					throw new Error(`Cannot run_compaction while session phase is ${nextState.phase}`);
-				}
-				const compactionResult = await this._runSessionCompactionStep(
-					nextState.compactionRequest,
-					sessionEvents,
-					sessionOps,
-					signal,
-				);
-				nextState.compactionRequest = undefined;
-				nextState.lastAssistantMessage = undefined;
-				nextState.terminalStatus = compactionResult.failed ? "failed" : "running";
-				if (compactionResult.nextAction === "run_assistant_turn") {
-					nextState.coreState = this._createContinuationLoopState();
-					nextState.phase = "awaiting_assistant";
-					nextAction = "run_assistant_turn";
-				} else {
-					nextState.phase = compactionResult.failed ? "failed" : "completed";
-					nextState.terminalStatus = compactionResult.failed ? "failed" : "completed";
-					nextAction = compactionResult.failed ? "failed" : "completed";
-				}
+			case "run_compaction":
+				await this._stepCompaction(run, signal);
 				break;
-			}
 		}
 
-		this._syncSessionLoopState(nextState);
+		return this._completeSessionStepRun(run);
+	}
+
+	private _createSessionStepRun(state: SessionLoopState): SessionStepRun {
+		const nextState = this._cloneSessionLoopState(state);
+		this._restoreSessionLoopState(nextState);
 		return {
 			state: nextState,
-			coreEvents,
-			sessionEvents,
-			sessionOps,
-			nextAction,
-			toolExecutionRequests,
-			terminalMessages,
+			coreEvents: [],
+			sessionEvents: [],
+			sessionOps: [],
 		};
+	}
+
+	private _completeSessionStepRun(run: SessionStepRun): SessionStepResult {
+		this._syncSessionLoopState(run.state);
+		if (!run.nextAction) {
+			throw new Error(`Session step did not produce a next action for phase ${run.state.phase}`);
+		}
+		return {
+			state: run.state,
+			coreEvents: run.coreEvents,
+			sessionEvents: run.sessionEvents,
+			sessionOps: run.sessionOps,
+			nextAction: run.nextAction,
+			toolExecutionRequests: run.toolExecutionRequests,
+			terminalMessages: run.terminalMessages,
+		};
+	}
+
+	private async _stepPreparePrompt(run: SessionStepRun): Promise<void> {
+		const { state } = run;
+		if (state.phase !== "preparing_prompt") {
+			throw new Error(`Cannot prepare_prompt while session phase is ${state.phase}`);
+		}
+
+		const prepared = await this._prepareSessionPromptMessages(state.input);
+		if (prepared.handled) {
+			state.phase = "completed";
+			state.terminalStatus = "completed";
+			run.nextAction = "completed";
+			return;
+		}
+
+		state.preparedPromptMessages = prepared.messages.slice();
+		state.coreState = initializeLoopState(
+			prepared.messages,
+			{
+				systemPrompt: this.agent.state.systemPrompt,
+				messages: this.agent.state.messages,
+				tools: this.agent.state.tools,
+			},
+			{ toolExecution: this.agent.toolExecution },
+		);
+		state.phase = "awaiting_assistant";
+		run.nextAction = "run_assistant_turn";
+	}
+
+	private async _stepCoreLoop(
+		run: SessionStepRun,
+		command: CoreSessionStepCommand,
+		signal?: AbortSignal,
+	): Promise<void> {
+		if (!run.state.coreState) {
+			throw new Error(`Cannot ${command.type} without a core loop state`);
+		}
+
+		const coreResult = await stepCoreLoop(
+			run.state.coreState,
+			this._toCoreStepCommand(command),
+			this._createCoreStepRuntime(run.sessionEvents),
+			signal,
+		);
+		run.coreEvents.push(...coreResult.events);
+		await this._applyCoreStepEvents(coreResult.events, run.sessionOps);
+		run.state.coreState = coreResult.state;
+		run.toolExecutionRequests = coreResult.toolExecutionRequests;
+		run.terminalMessages = coreResult.terminalMessages;
+
+		if (this._coreStepNeedsPostTurnEffects(command, coreResult.nextAction)) {
+			run.state.phase = "awaiting_post_turn_effects";
+			run.nextAction = "run_post_turn_effects";
+			return;
+		}
+
+		run.state.phase = this._mapCorePhaseToSessionPhase(coreResult.state.phase);
+		run.nextAction = this._mapCoreNextActionToSessionNextAction(coreResult.nextAction);
+	}
+
+	private _coreStepNeedsPostTurnEffects(
+		command: CoreSessionStepCommand,
+		nextAction: Awaited<ReturnType<typeof stepCoreLoop>>["nextAction"],
+	): boolean {
+		return (
+			(command.type === "run_assistant_turn" && nextAction === "failed") ||
+			(command.type === "finalize_turn" && nextAction === "check_follow_up")
+		);
+	}
+
+	private async _stepPostTurnEffects(run: SessionStepRun, signal?: AbortSignal): Promise<void> {
+		if (run.state.phase !== "awaiting_post_turn_effects" || !run.state.coreState) {
+			throw new Error(`Cannot run_post_turn_effects while session phase is ${run.state.phase}`);
+		}
+
+		if (await this._tryResumeFollowUpTurn(run, signal)) {
+			return;
+		}
+
+		const postTurnResult = this._evaluatePostTurnState(run.state, run.sessionEvents);
+		run.state.phase = postTurnResult.phase;
+		run.state.terminalStatus = postTurnResult.terminalStatus;
+		run.state.compactionRequest = postTurnResult.compactionRequest;
+		run.nextAction = postTurnResult.nextAction;
+	}
+
+	private async _tryResumeFollowUpTurn(run: SessionStepRun, signal?: AbortSignal): Promise<boolean> {
+		if (run.state.coreState?.phase !== "awaiting_follow_up") {
+			return false;
+		}
+
+		const followUpResult = await stepCoreLoop(
+			run.state.coreState,
+			{ type: "check_follow_up" },
+			this._createCoreStepRuntime(run.sessionEvents),
+			signal,
+		);
+		run.coreEvents.push(...followUpResult.events);
+		await this._applyCoreStepEvents(followUpResult.events, run.sessionOps);
+		run.state.coreState = followUpResult.state;
+		run.terminalMessages = followUpResult.terminalMessages;
+
+		if (followUpResult.nextAction !== "run_assistant_turn") {
+			return false;
+		}
+
+		run.state.phase = "awaiting_assistant";
+		run.nextAction = "run_assistant_turn";
+		return true;
+	}
+
+	private async _stepCompaction(run: SessionStepRun, signal?: AbortSignal): Promise<void> {
+		if (run.state.phase !== "awaiting_compaction" || !run.state.compactionRequest) {
+			throw new Error(`Cannot run_compaction while session phase is ${run.state.phase}`);
+		}
+
+		const compactionResult = await this._runSessionCompactionStep(
+			run.state.compactionRequest,
+			run.sessionEvents,
+			run.sessionOps,
+			signal,
+		);
+		run.state.compactionRequest = undefined;
+		run.state.lastAssistantMessage = undefined;
+
+		if (compactionResult.nextAction === "run_assistant_turn") {
+			run.state.coreState = this._createContinuationLoopState();
+			run.state.phase = "awaiting_assistant";
+			run.state.terminalStatus = "running";
+			run.nextAction = "run_assistant_turn";
+			return;
+		}
+
+		run.state.phase = compactionResult.failed ? "failed" : "completed";
+		run.state.terminalStatus = compactionResult.failed ? "failed" : "completed";
+		run.nextAction = compactionResult.failed ? "failed" : "completed";
 	}
 
 	private _cloneSessionLoopState(state: SessionLoopState): SessionLoopState {
