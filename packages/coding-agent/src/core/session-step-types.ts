@@ -12,7 +12,7 @@ import type { InputSource } from "./extensions/index.js";
  * Discrete phase of the AgentSession-level stepped loop.
  *
  * Wraps the lower-level core agent `LoopPhase` with session-only phases for
- * prompt preparation, post-turn extension effects, and compaction.
+ * prompt preparation, post-turn handling, and compaction.
  */
 export type SessionLoopPhase =
 	| "preparing_prompt"
@@ -20,13 +20,10 @@ export type SessionLoopPhase =
 	| "awaiting_tool_preflight"
 	| "awaiting_tool_execution"
 	| "awaiting_turn_close"
-	| "awaiting_post_turn_effects"
+	| "awaiting_post_turn"
 	| "awaiting_compaction"
 	| "completed"
 	| "failed";
-
-/** Terminal status reported by the session-level stepped loop. */
-export type SessionLoopTerminalStatus = "running" | "completed" | "failed";
 
 /**
  * Input that kicks off a session-level stepped loop.
@@ -78,7 +75,6 @@ export interface SessionCompactionRequest {
  */
 export interface SessionLoopState {
 	phase: SessionLoopPhase;
-	terminalStatus: SessionLoopTerminalStatus;
 	input: SessionLoopInput;
 	coreState?: LoopState;
 	preparedPromptMessages: AgentMessage[];
@@ -117,8 +113,8 @@ export type SessionPersistenceOp =
  * One-step command accepted by the session stepped loop.
  *
  * Most commands map onto the underlying core agent loop; `prepare_prompt`,
- * `run_post_turn_effects`, and `run_compaction` are session-only steps that
- * have no core-loop equivalent.
+ * `run_post_turn`, and `run_compaction` are session-only steps that have no
+ * core-loop equivalent.
  */
 export type SessionStepCommand =
 	| { type: "prepare_prompt" }
@@ -126,7 +122,7 @@ export type SessionStepCommand =
 	| { type: "prepare_tool_calls" }
 	| { type: "complete_tool_call"; toolCallId: string; result: AgentToolResult<unknown>; isError: boolean }
 	| { type: "finalize_turn" }
-	| { type: "run_post_turn_effects" }
+	| { type: "run_post_turn" }
 	| { type: "run_compaction" };
 
 /** Next command the host should issue, or a terminal status when the session loop is done. */
@@ -135,7 +131,7 @@ export type SessionStepNextAction =
 	| "prepare_tool_calls"
 	| "complete_tool_call"
 	| "finalize_turn"
-	| "run_post_turn_effects"
+	| "run_post_turn"
 	| "run_compaction"
 	| "completed"
 	| "failed";

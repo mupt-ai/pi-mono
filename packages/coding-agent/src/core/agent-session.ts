@@ -624,7 +624,7 @@ export class AgentSession {
 		}
 
 		// Check auto-retry and auto-compaction after agent completes.
-		// Stepped mode defers this to the explicit run_post_turn_effects phase.
+		// Stepped mode defers this to the explicit run_post_turn phase.
 		if (event.type === "agent_end" && this._lastAssistantMessage) {
 			if (options.deferAgentEndEffects) {
 				return;
@@ -1174,7 +1174,6 @@ export class AgentSession {
 	): Promise<SessionLoopState> {
 		return {
 			phase: "preparing_prompt",
-			terminalStatus: "running",
 			input: this._createSessionLoopInput(input, options),
 			preparedPromptMessages: [],
 			queue: this._snapshotSessionQueues(),
@@ -1232,7 +1231,7 @@ export class AgentSession {
 			case "finalize_turn":
 				await this._stepCoreLoop(run, command, signal);
 				break;
-			case "run_post_turn_effects":
+			case "run_post_turn":
 				await this._stepPostTurnEffects(run, signal);
 				break;
 			case "run_compaction":
@@ -1279,7 +1278,6 @@ export class AgentSession {
 		const prepared = await this._prepareSessionPromptMessages(state.input);
 		if (prepared.handled) {
 			state.phase = "completed";
-			state.terminalStatus = "completed";
 			run.nextAction = "completed";
 			return;
 		}
@@ -1320,8 +1318,8 @@ export class AgentSession {
 		run.terminalMessages = coreResult.terminalMessages;
 
 		if (this._coreStepNeedsPostTurnEffects(command, coreResult.nextAction)) {
-			run.state.phase = "awaiting_post_turn_effects";
-			run.nextAction = "run_post_turn_effects";
+			run.state.phase = "awaiting_post_turn";
+			run.nextAction = "run_post_turn";
 			return;
 		}
 
@@ -1340,8 +1338,8 @@ export class AgentSession {
 	}
 
 	private async _stepPostTurnEffects(run: SessionStepRun, signal?: AbortSignal): Promise<void> {
-		if (run.state.phase !== "awaiting_post_turn_effects" || !run.state.coreState) {
-			throw new Error(`Cannot run_post_turn_effects while session phase is ${run.state.phase}`);
+		if (run.state.phase !== "awaiting_post_turn" || !run.state.coreState) {
+			throw new Error(`Cannot run_post_turn while session phase is ${run.state.phase}`);
 		}
 
 		if (await this._tryResumeFollowUpTurn(run, signal)) {
@@ -1350,7 +1348,6 @@ export class AgentSession {
 
 		const postTurnResult = this._evaluatePostTurnState(run.state, run.sessionEvents);
 		run.state.phase = postTurnResult.phase;
-		run.state.terminalStatus = postTurnResult.terminalStatus;
 		run.state.compactionRequest = postTurnResult.compactionRequest;
 		run.nextAction = postTurnResult.nextAction;
 	}
@@ -1397,13 +1394,11 @@ export class AgentSession {
 		if (compactionResult.nextAction === "run_assistant_turn") {
 			run.state.coreState = this._createContinuationLoopState();
 			run.state.phase = "awaiting_assistant";
-			run.state.terminalStatus = "running";
 			run.nextAction = "run_assistant_turn";
 			return;
 		}
 
 		run.state.phase = compactionResult.failed ? "failed" : "completed";
-		run.state.terminalStatus = compactionResult.failed ? "failed" : "completed";
 		run.nextAction = compactionResult.failed ? "failed" : "completed";
 	}
 
@@ -1456,7 +1451,7 @@ export class AgentSession {
 		this._lastAssistantMessage = state.lastAssistantMessage;
 
 		const mutableState = this.agent.state as MutableSessionAgentState;
-		mutableState.isStreaming = state.terminalStatus === "running" && state.phase !== "preparing_prompt";
+		mutableState.isStreaming = !this._isTerminalSessionPhase(state.phase) && state.phase !== "preparing_prompt";
 		mutableState.streamingMessage = undefined;
 		mutableState.pendingToolCalls = new Set<string>();
 		mutableState.errorMessage = undefined;
@@ -1474,7 +1469,7 @@ export class AgentSession {
 			this.agent.state.messages = state.coreState.messages;
 		}
 		const mutableState = this.agent.state as MutableSessionAgentState;
-		mutableState.isStreaming = state.terminalStatus === "running" && !["completed", "failed"].includes(state.phase);
+		mutableState.isStreaming = !this._isTerminalSessionPhase(state.phase);
 	}
 
 	private _emitSessionStepEvent(event: AgentSessionEvent, sessionEvents: AgentSessionEvent[]): void {
@@ -1725,21 +1720,15 @@ export class AgentSession {
 		}
 	}
 
+	private _isTerminalSessionPhase(phase: SessionLoopState["phase"]): boolean {
+		return phase === "completed" || phase === "failed";
+	}
+
 	private _mapCorePhaseToSessionPhase(phase: LoopState["phase"]): SessionLoopState["phase"] {
-		switch (phase) {
-			case "awaiting_assistant":
-				return "awaiting_assistant";
-			case "awaiting_tool_preflight":
-				return "awaiting_tool_preflight";
-			case "awaiting_tool_execution":
-				return "awaiting_tool_execution";
-			case "awaiting_turn_close":
-				return "awaiting_turn_close";
-			case "awaiting_follow_up":
-			case "completed":
-			case "failed":
-				return "awaiting_post_turn_effects";
+		if (phase === "awaiting_follow_up" || phase === "completed" || phase === "failed") {
+			return "awaiting_post_turn";
 		}
+		return phase;
 	}
 
 	private _mapCoreNextActionToSessionNextAction(
@@ -1755,11 +1744,11 @@ export class AgentSession {
 			case "finalize_turn":
 				return "finalize_turn";
 			case "check_follow_up":
-				return "run_post_turn_effects";
+				return "run_post_turn";
 			case "completed":
 				return "completed";
 			case "failed":
-				return "run_post_turn_effects";
+				return "run_post_turn";
 		}
 	}
 
@@ -1768,7 +1757,6 @@ export class AgentSession {
 		sessionEvents: AgentSessionEvent[],
 	): {
 		phase: SessionLoopState["phase"];
-		terminalStatus: SessionLoopState["terminalStatus"];
 		compactionRequest?: SessionCompactionRequest;
 		nextAction: SessionStepResult["nextAction"];
 	} {
@@ -1794,7 +1782,6 @@ export class AgentSession {
 					state.coreState = this._createContinuationLoopState();
 					return {
 						phase: "awaiting_assistant",
-						terminalStatus: "running",
 						nextAction: "run_assistant_turn",
 					};
 				}
@@ -1818,7 +1805,6 @@ export class AgentSession {
 				}
 				return {
 					phase: "awaiting_compaction",
-					terminalStatus: "running",
 					compactionRequest,
 					nextAction: "run_compaction",
 				};
@@ -1828,13 +1814,11 @@ export class AgentSession {
 		if (state.coreState?.terminalStatus === "failed") {
 			return {
 				phase: "failed",
-				terminalStatus: "failed",
 				nextAction: "failed",
 			};
 		}
 		return {
 			phase: "completed",
-			terminalStatus: "completed",
 			nextAction: "completed",
 		};
 	}

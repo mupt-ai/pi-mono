@@ -218,7 +218,6 @@ export type {
 	SessionLoopInput,
 	SessionLoopPhase,
 	SessionLoopState,
-	SessionLoopTerminalStatus,
 	SessionPersistenceOp,
 	SessionQueueSnapshot,
 	SessionStepCommand,
