@@ -808,8 +808,7 @@ async function runLoop(
 }
 
 /**
- * Stream an assistant response from the LLM.
- * This is where AgentMessage[] gets transformed to Message[] for the LLM.
+ * Build the provider request. This is where AgentMessage[] gets transformed to Message[] for the LLM.
  */
 async function createProviderRequest(
 	context: AgentContext,
@@ -858,6 +857,7 @@ function toProviderTool(tool: AgentTool<any>): Tool {
 	};
 }
 
+/** Stream an assistant response from the LLM. */
 async function streamAssistantResponse(
 	context: AgentContext,
 	config: AgentLoopConfig,
