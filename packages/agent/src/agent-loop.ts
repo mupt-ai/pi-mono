@@ -5,9 +5,9 @@
 
 import {
 	type AssistantMessage,
-	type Context,
 	EventStream,
 	streamSimple,
+	type Tool,
 	type ToolResultMessage,
 	validateToolArguments,
 } from "@mariozechner/pi-ai";
@@ -22,6 +22,7 @@ import type {
 	CompletedToolCallSnapshot,
 	LoopState,
 	PreparedToolCallSnapshot,
+	ProviderRequest,
 	StepCommand,
 	StepLoopRuntime,
 	StepResult,
@@ -176,6 +177,7 @@ export function initializeLoopState(
 		preparedToolCalls: [],
 		executedToolCalls: [],
 		completedToolResults: [],
+		providerRequest: undefined,
 		currentAssistantMessage: undefined,
 		firstTurn: true,
 		initialSteeringChecked: false,
@@ -211,6 +213,10 @@ export async function stepLoop(
 	switch (command.type) {
 		case "run_assistant_turn":
 			return runAssistantTurnStep(nextState, runtime, signal, emit, events);
+		case "prepare_provider_request":
+			return prepareProviderRequestStep(nextState, runtime, signal, events);
+		case "complete_provider_response":
+			return completeProviderResponseStep(nextState, command, emit, events);
 		case "prepare_tool_calls":
 			return prepareToolCallsStep(nextState, runtime, signal, emit, events);
 		case "complete_tool_call":
@@ -247,10 +253,44 @@ async function runAssistantTurnStep(
 	await injectPendingMessages(state, state.pendingFollowUpMessages, emit);
 	state.pendingFollowUpMessages = [];
 
+	if (runtime.config.providerExecution === "external") {
+		state.phase = "awaiting_provider_request";
+		return createStepResult(state, events, "prepare_provider_request");
+	}
+
 	const context = createLoopContext(state, runtime.tools);
 
 	const message = await streamAssistantResponse(context, runtime.config, signal, emit, runtime.streamFn);
 	return advanceAfterAssistantMessage(state, message, emit, events);
+}
+
+async function prepareProviderRequestStep(
+	state: LoopState,
+	runtime: StepLoopRuntime,
+	signal: AbortSignal | undefined,
+	events: AgentEvent[],
+): Promise<StepResult> {
+	assertPhase(state, "awaiting_provider_request", "prepare_provider_request");
+	state.providerRequest = await createProviderRequest(createLoopContext(state, runtime.tools), runtime.config, signal);
+	state.phase = "awaiting_provider_response";
+	return createStepResult(state, events, "complete_provider_response", { providerRequest: state.providerRequest });
+}
+
+async function completeProviderResponseStep(
+	state: LoopState,
+	command: Extract<StepCommand, { type: "complete_provider_response" }>,
+	emit: AgentEventSink,
+	events: AgentEvent[],
+): Promise<StepResult> {
+	assertPhase(state, "awaiting_provider_response", "complete_provider_response");
+	if (!state.providerRequest) {
+		throw new Error("Cannot complete provider response without a prepared provider request");
+	}
+	state.providerRequest = undefined;
+	state.messages.push(command.message);
+	await emit({ type: "message_start", message: { ...command.message } });
+	await emit({ type: "message_end", message: command.message });
+	return advanceAfterAssistantMessage(state, command.message, emit, events);
 }
 
 async function prepareToolCallsStep(
@@ -613,6 +653,7 @@ function clearTurnState(state: LoopState): void {
 	state.preparedToolCalls = [];
 	state.executedToolCalls = [];
 	state.completedToolResults = [];
+	state.providerRequest = undefined;
 	state.currentAssistantMessage = undefined;
 }
 
@@ -654,6 +695,7 @@ function createStepResult(
 	events: AgentEvent[],
 	nextAction: StepResult["nextAction"],
 	options: {
+		providerRequest?: ProviderRequest;
 		toolExecutionRequests?: ToolExecutionRequest[];
 		terminalMessages?: AgentMessage[];
 	} = {},
@@ -662,6 +704,7 @@ function createStepResult(
 		state,
 		events,
 		nextAction,
+		providerRequest: options.providerRequest,
 		toolExecutionRequests: options.toolExecutionRequests,
 		terminalMessages: options.terminalMessages,
 	};
@@ -768,6 +811,53 @@ async function runLoop(
  * Stream an assistant response from the LLM.
  * This is where AgentMessage[] gets transformed to Message[] for the LLM.
  */
+async function createProviderRequest(
+	context: AgentContext,
+	config: AgentLoopConfig,
+	signal: AbortSignal | undefined,
+): Promise<ProviderRequest> {
+	let messages = context.messages;
+	if (config.transformContext) {
+		messages = await config.transformContext(messages, signal);
+	}
+
+	const llmMessages = await config.convertToLlm(messages);
+	const resolvedApiKey =
+		(config.getApiKey ? await config.getApiKey(config.model.provider) : undefined) || config.apiKey;
+
+	return {
+		model: config.model,
+		context: {
+			systemPrompt: context.systemPrompt,
+			messages: llmMessages,
+			tools: context.tools?.map(toProviderTool),
+		},
+		options: {
+			apiKey: resolvedApiKey,
+			cacheRetention: config.cacheRetention,
+			headers: config.headers,
+			maxRetries: config.maxRetries,
+			maxRetryDelayMs: config.maxRetryDelayMs,
+			maxTokens: config.maxTokens,
+			metadata: config.metadata,
+			reasoning: config.reasoning,
+			sessionId: config.sessionId,
+			temperature: config.temperature,
+			thinkingBudgets: config.thinkingBudgets,
+			timeoutMs: config.timeoutMs,
+			transport: config.transport,
+		},
+	};
+}
+
+function toProviderTool(tool: AgentTool<any>): Tool {
+	return {
+		name: tool.name,
+		description: tool.description,
+		parameters: tool.parameters,
+	};
+}
+
 async function streamAssistantResponse(
 	context: AgentContext,
 	config: AgentLoopConfig,
@@ -775,31 +865,12 @@ async function streamAssistantResponse(
 	emit: AgentEventSink,
 	streamFn?: StreamFn,
 ): Promise<AssistantMessage> {
-	// Apply context transform if configured (AgentMessage[] → AgentMessage[])
-	let messages = context.messages;
-	if (config.transformContext) {
-		messages = await config.transformContext(messages, signal);
-	}
-
-	// Convert to LLM-compatible messages (AgentMessage[] → Message[])
-	const llmMessages = await config.convertToLlm(messages);
-
-	// Build LLM context
-	const llmContext: Context = {
-		systemPrompt: context.systemPrompt,
-		messages: llmMessages,
-		tools: context.tools,
-	};
-
+	const providerRequest = await createProviderRequest(context, config, signal);
 	const streamFunction = streamFn || streamSimple;
 
-	// Resolve API key (important for expiring tokens)
-	const resolvedApiKey =
-		(config.getApiKey ? await config.getApiKey(config.model.provider) : undefined) || config.apiKey;
-
-	const response = await streamFunction(config.model, llmContext, {
+	const response = await streamFunction(config.model, providerRequest.context, {
 		...config,
-		apiKey: resolvedApiKey,
+		...providerRequest.options,
 		signal,
 	});
 
