@@ -20,6 +20,7 @@ import type {
 	AgentTool,
 	BeforeToolCallContext,
 	BeforeToolCallResult,
+	ProviderExecutionMode,
 	StreamFn,
 	ToolExecutionMode,
 } from "./types.js";
@@ -108,6 +109,7 @@ export interface AgentOptions {
 	transport?: Transport;
 	maxRetryDelayMs?: number;
 	toolExecution?: ToolExecutionMode;
+	providerExecution?: ProviderExecutionMode;
 }
 
 class PendingMessageQueue {
@@ -222,6 +224,8 @@ export class Agent {
 	public maxRetryDelayMs?: number;
 	/** Tool execution strategy for assistant messages that contain multiple tool calls. */
 	public toolExecution: ToolExecutionMode;
+	/** Provider execution strategy for stepped loops. */
+	public providerExecution: ProviderExecutionMode;
 
 	constructor(options: AgentOptions = {}) {
 		this._state = createMutableAgentState(options.initialState);
@@ -240,6 +244,7 @@ export class Agent {
 		this.transport = options.transport ?? "sse";
 		this.maxRetryDelayMs = options.maxRetryDelayMs;
 		this.toolExecution = options.toolExecution ?? "parallel";
+		this.providerExecution = options.providerExecution ?? "internal";
 	}
 
 	/**
@@ -497,6 +502,7 @@ export class Agent {
 			thinkingBudgets: this.thinkingBudgets,
 			maxRetryDelayMs: this.maxRetryDelayMs,
 			toolExecution: this.toolExecution,
+			providerExecution: this.providerExecution,
 			beforeToolCall: this.beforeToolCall,
 			afterToolCall: this.afterToolCall,
 			convertToLlm: this.convertToLlm,
