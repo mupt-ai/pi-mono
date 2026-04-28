@@ -133,7 +133,17 @@ async function runSteppedLoop(
 			continue;
 		}
 
-		command = { type: result.nextAction };
+		switch (result.nextAction) {
+			case "run_assistant_turn":
+			case "prepare_provider_request":
+			case "prepare_tool_calls":
+			case "finalize_turn":
+			case "check_follow_up":
+				command = { type: result.nextAction };
+				break;
+			case "complete_provider_response":
+				throw new Error("Unexpected external provider response request");
+		}
 	}
 }
 

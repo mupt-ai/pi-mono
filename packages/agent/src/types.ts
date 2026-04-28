@@ -1,6 +1,7 @@
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
+	Context,
 	ImageContent,
 	Message,
 	Model,
@@ -34,6 +35,9 @@ export type StreamFn = (
  *   while tool-result message artifacts are emitted later in assistant source order.
  */
 export type ToolExecutionMode = "sequential" | "parallel";
+
+/** Controls whether stepped loops call the LLM provider directly or ask the host to do it. */
+export type ProviderExecutionMode = "internal" | "external";
 
 /** A single tool call content block emitted by an assistant message. */
 export type AgentToolCall = Extract<AssistantMessage["content"][number], { type: "toolCall" }>;
@@ -201,6 +205,15 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	toolExecution?: ToolExecutionMode;
 
 	/**
+	 * Provider execution mode for stepped loops.
+	 * - "internal": call the configured provider stream function directly
+	 * - "external": emit a provider request and wait for `complete_provider_response`
+	 *
+	 * Default: "internal"
+	 */
+	providerExecution?: ProviderExecutionMode;
+
+	/**
 	 * Called before a tool is executed, after arguments have been validated.
 	 *
 	 * Return `{ block: true }` to prevent execution. The loop emits an error tool result instead.
@@ -343,6 +356,8 @@ export interface AgentContext {
 /** Discrete phase of the stepped agent loop. Used to gate which `StepCommand` is valid next. */
 export type LoopPhase =
 	| "awaiting_assistant"
+	| "awaiting_provider_request"
+	| "awaiting_provider_response"
 	| "awaiting_tool_preflight"
 	| "awaiting_tool_execution"
 	| "awaiting_turn_close"
@@ -379,6 +394,16 @@ export interface CompletedToolCallSnapshot {
 	message: ToolResultMessage<unknown>;
 }
 
+/** Provider options surfaced to hosts for external LLM execution. */
+export type ProviderRequestOptions = Omit<SimpleStreamOptions, "signal" | "onPayload" | "onResponse">;
+
+/** Provider call the host should execute when provider execution is externalized. */
+export interface ProviderRequest {
+	model: Model<any>;
+	context: Context;
+	options: ProviderRequestOptions;
+}
+
 /**
  * Serializable carry-state for the stepped agent loop.
  *
@@ -405,6 +430,7 @@ export interface LoopState {
 	preparedToolCalls: PreparedToolCallSnapshot[];
 	executedToolCalls: ExecutedToolCallSnapshot[];
 	completedToolResults: CompletedToolCallSnapshot[];
+	providerRequest?: ProviderRequest;
 	currentAssistantMessage?: AssistantMessage;
 	firstTurn: boolean;
 	initialSteeringChecked: boolean;
@@ -432,6 +458,8 @@ export interface ToolExecutionRequest {
  */
 export type StepCommand =
 	| { type: "run_assistant_turn" }
+	| { type: "prepare_provider_request" }
+	| { type: "complete_provider_response"; message: AssistantMessage }
 	| { type: "prepare_tool_calls" }
 	| { type: "complete_tool_call"; toolCallId: string; result: AgentToolResult<unknown>; isError: boolean }
 	| { type: "finalize_turn" }
@@ -440,6 +468,8 @@ export type StepCommand =
 /** Next command the host should issue, or a terminal status when the loop is done. */
 export type StepLoopNextAction =
 	| "run_assistant_turn"
+	| "prepare_provider_request"
+	| "complete_provider_response"
 	| "prepare_tool_calls"
 	| "complete_tool_call"
 	| "finalize_turn"
@@ -460,6 +490,7 @@ export interface StepResult {
 	state: LoopState;
 	events: AgentEvent[];
 	nextAction: StepLoopNextAction;
+	providerRequest?: ProviderRequest;
 	toolExecutionRequests?: ToolExecutionRequest[];
 	terminalMessages?: AgentMessage[];
 }

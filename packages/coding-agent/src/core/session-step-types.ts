@@ -3,6 +3,7 @@ import type {
 	AgentMessage,
 	AgentToolResult,
 	LoopState,
+	ProviderRequest,
 	ToolExecutionRequest,
 } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, ImageContent } from "@mariozechner/pi-ai";
@@ -17,6 +18,8 @@ import type { InputSource } from "./extensions/index.js";
 export type SessionLoopPhase =
 	| "preparing_prompt"
 	| "awaiting_assistant"
+	| "awaiting_provider_request"
+	| "awaiting_provider_response"
 	| "awaiting_tool_preflight"
 	| "awaiting_tool_execution"
 	| "awaiting_turn_close"
@@ -119,6 +122,8 @@ export type SessionPersistenceOp =
 export type SessionStepCommand =
 	| { type: "prepare_prompt" }
 	| { type: "run_assistant_turn" }
+	| { type: "prepare_provider_request" }
+	| { type: "complete_provider_response"; message: AssistantMessage }
 	| { type: "prepare_tool_calls" }
 	| { type: "complete_tool_call"; toolCallId: string; result: AgentToolResult<unknown>; isError: boolean }
 	| { type: "finalize_turn" }
@@ -128,6 +133,8 @@ export type SessionStepCommand =
 /** Next command the host should issue, or a terminal status when the session loop is done. */
 export type SessionStepNextAction =
 	| "run_assistant_turn"
+	| "prepare_provider_request"
+	| "complete_provider_response"
 	| "prepare_tool_calls"
 	| "complete_tool_call"
 	| "finalize_turn"
@@ -151,6 +158,7 @@ export interface SessionStepResult {
 	sessionEvents: unknown[];
 	sessionOps: SessionPersistenceOp[];
 	nextAction: SessionStepNextAction;
+	providerRequest?: ProviderRequest;
 	toolExecutionRequests?: ToolExecutionRequest[];
 	terminalMessages?: AgentMessage[];
 }

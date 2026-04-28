@@ -23,6 +23,7 @@ import {
 	type AgentTool,
 	initializeLoopState,
 	type LoopState,
+	type ProviderRequest,
 	type StepCommand,
 	stepLoop as stepCoreLoop,
 	type ThinkingLevel,
@@ -246,6 +247,8 @@ type MutableSessionAgentState = AgentState & {
 type CoreSessionStepCommand = Extract<
 	SessionStepCommand,
 	| { type: "run_assistant_turn" }
+	| { type: "prepare_provider_request" }
+	| { type: "complete_provider_response" }
 	| { type: "prepare_tool_calls" }
 	| { type: "complete_tool_call" }
 	| { type: "finalize_turn" }
@@ -257,6 +260,7 @@ type SessionStepRun = {
 	sessionEvents: AgentSessionEvent[];
 	sessionOps: SessionPersistenceOp[];
 	nextAction?: SessionStepResult["nextAction"];
+	providerRequest?: ProviderRequest;
 	toolExecutionRequests?: ToolExecutionRequest[];
 	terminalMessages?: AgentMessage[];
 };
@@ -1226,6 +1230,8 @@ export class AgentSession {
 				await this._stepPreparePrompt(run);
 				break;
 			case "run_assistant_turn":
+			case "prepare_provider_request":
+			case "complete_provider_response":
 			case "prepare_tool_calls":
 			case "complete_tool_call":
 			case "finalize_turn":
@@ -1265,6 +1271,7 @@ export class AgentSession {
 			sessionOps: run.sessionOps,
 			nextAction: run.nextAction,
 			toolExecutionRequests: run.toolExecutionRequests,
+			providerRequest: run.providerRequest,
 			terminalMessages: run.terminalMessages,
 		};
 	}
@@ -1314,6 +1321,7 @@ export class AgentSession {
 		run.coreEvents.push(...coreResult.events);
 		await this._applyCoreStepEvents(coreResult.events, run.sessionOps);
 		run.state.coreState = coreResult.state;
+		run.providerRequest = coreResult.providerRequest;
 		run.toolExecutionRequests = coreResult.toolExecutionRequests;
 		run.terminalMessages = coreResult.terminalMessages;
 
@@ -1418,6 +1426,7 @@ export class AgentSession {
 						preparedToolCalls: state.coreState.preparedToolCalls.map((prepared) => ({ ...prepared })),
 						executedToolCalls: state.coreState.executedToolCalls.map((executed) => ({ ...executed })),
 						completedToolResults: state.coreState.completedToolResults.map((completed) => ({ ...completed })),
+						providerRequest: state.coreState.providerRequest,
 					}
 				: undefined,
 			queue: {
@@ -1553,6 +1562,7 @@ export class AgentSession {
 				thinkingBudgets: this.agent.thinkingBudgets,
 				maxRetryDelayMs: this.agent.maxRetryDelayMs,
 				toolExecution: this.agent.toolExecution,
+				providerExecution: this.agent.providerExecution,
 				beforeToolCall: this.agent.beforeToolCall,
 				afterToolCall: this.agent.afterToolCall,
 				convertToLlm: this.agent.convertToLlm,
@@ -1707,9 +1717,15 @@ export class AgentSession {
 	private _toCoreStepCommand(command: CoreSessionStepCommand): StepCommand {
 		switch (command.type) {
 			case "run_assistant_turn":
+			case "prepare_provider_request":
 			case "prepare_tool_calls":
 			case "finalize_turn":
 				return { type: command.type };
+			case "complete_provider_response":
+				return {
+					type: "complete_provider_response",
+					message: command.message,
+				};
 			case "complete_tool_call":
 				return {
 					type: "complete_tool_call",
@@ -1737,6 +1753,10 @@ export class AgentSession {
 		switch (nextAction) {
 			case "run_assistant_turn":
 				return "run_assistant_turn";
+			case "prepare_provider_request":
+				return "prepare_provider_request";
+			case "complete_provider_response":
+				return "complete_provider_response";
 			case "prepare_tool_calls":
 				return "prepare_tool_calls";
 			case "complete_tool_call":
