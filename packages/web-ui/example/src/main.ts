@@ -70,17 +70,23 @@ let chatPanel: ChatPanel;
 let agentUnsubscribe: (() => void) | undefined;
 
 const generateTitle = (messages: AgentMessage[]): string => {
-	const firstUserMsg = messages.find((m) => m.role === "user" || m.role === "user-with-attachments");
-	if (!firstUserMsg || (firstUserMsg.role !== "user" && firstUserMsg.role !== "user-with-attachments")) return "";
+	const firstUserMsg = messages.find((m) => {
+		const role = (m as { role: string }).role;
+		return role === "user" || role === "user-with-attachments";
+	});
+	if (!firstUserMsg) return "";
 
 	let text = "";
-	const content = firstUserMsg.content;
+	const content = (firstUserMsg as { content?: unknown }).content;
 
 	if (typeof content === "string") {
 		text = content;
-	} else {
-		const textBlocks = content.filter((c: any) => c.type === "text");
-		text = textBlocks.map((c: any) => c.text || "").join(" ");
+	} else if (Array.isArray(content)) {
+		const textBlocks = content.filter(
+			(c: unknown): c is { type: "text"; text?: string } =>
+				typeof c === "object" && c !== null && (c as { type?: unknown }).type === "text",
+		);
+		text = textBlocks.map((c) => c.text || "").join(" ");
 	}
 
 	text = text.trim();
