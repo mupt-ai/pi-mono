@@ -350,15 +350,22 @@ async function prepareToolCallsStep(
 				await emitToolExecutionEnd(finalized, emit);
 				const message = createToolResultMessage(finalized);
 				await emitToolResultMessage(message, emit);
-				state.completedToolResults.push(
+				insertCompletedToolCallSnapshot(
+					state,
 					createCompletedToolCallSnapshot(toolCall, undefined, finalized.result, finalized.isError, message),
 				);
 				continue;
 			}
 
-			const prepared = createPreparedToolCallSnapshot(preparation);
-			state.preparedToolCalls.push(prepared);
-			toolExecutionRequests.push(createToolExecutionRequest(prepared));
+			const context = createLoopContext(state, runtime.tools);
+			if (shouldExternalizePreparedToolCall(preparation, context, runtime.config)) {
+				const prepared = createPreparedToolCallSnapshot(preparation);
+				state.preparedToolCalls.push(prepared);
+				toolExecutionRequests.push(createToolExecutionRequest(prepared));
+				continue;
+			}
+
+			await executePreparedToolCallInternally(state, runtime, assistantMessage, preparation, signal, emit);
 		}
 
 		if (toolExecutionRequests.length > 0) {
@@ -400,9 +407,21 @@ async function prepareToolCallsStep(
 		await emitToolExecutionEnd(finalized, emit);
 		const message = createToolResultMessage(finalized);
 		await emitToolResultMessage(message, emit);
-		state.completedToolResults.push(
+		insertCompletedToolCallSnapshot(
+			state,
 			createCompletedToolCallSnapshot(toolCall, undefined, finalized.result, finalized.isError, message),
 		);
+		if (state.pendingToolCalls.length > 0) {
+			return createStepResult(state, events, "prepare_tool_calls");
+		}
+
+		state.phase = "awaiting_turn_close";
+		return createStepResult(state, events, "finalize_turn");
+	}
+
+	const context = createLoopContext(state, runtime.tools);
+	if (!shouldExternalizePreparedToolCall(preparation, context, runtime.config)) {
+		await executePreparedToolCallInternally(state, runtime, assistantMessage, preparation, signal, emit);
 		if (state.pendingToolCalls.length > 0) {
 			return createStepResult(state, events, "prepare_tool_calls");
 		}
@@ -470,7 +489,8 @@ async function completeToolCallStep(
 		await emitToolExecutionEnd(finalized, emit);
 		const message = createToolResultMessage(finalized);
 		await emitToolResultMessage(message, emit);
-		state.completedToolResults.push(
+		insertCompletedToolCallSnapshot(
+			state,
 			createCompletedToolCallSnapshot(
 				{
 					type: "toolCall",
@@ -616,6 +636,67 @@ function createToolExecutionRequest(prepared: PreparedToolCallSnapshot): ToolExe
 		rawArguments: prepared.rawArguments,
 		args: prepared.args,
 	};
+}
+
+async function executePreparedToolCallInternally(
+	state: LoopState,
+	runtime: StepLoopRuntime,
+	assistantMessage: AssistantMessage,
+	preparation: PreparedToolCall,
+	signal: AbortSignal | undefined,
+	emit: AgentEventSink,
+): Promise<void> {
+	const executed = await executePreparedToolCall(preparation, signal, emit);
+	const finalized = await finalizeExecutedToolCall(
+		createLoopContext(state, runtime.tools),
+		assistantMessage,
+		preparation,
+		executed,
+		runtime.config,
+		signal,
+	);
+	await emitToolExecutionEnd(finalized, emit);
+	const message = createToolResultMessage(finalized);
+	await emitToolResultMessage(message, emit);
+	insertCompletedToolCallSnapshot(
+		state,
+		createCompletedToolCallSnapshot(
+			preparation.toolCall,
+			preparation.args,
+			finalized.result,
+			finalized.isError,
+			message,
+		),
+	);
+}
+
+function shouldExternalizePreparedToolCall(
+	preparation: PreparedToolCall,
+	context: AgentContext,
+	config: AgentLoopConfig,
+): boolean {
+	return (
+		config.shouldExternalizeToolCall?.({
+			tool: preparation.tool,
+			toolCall: preparation.toolCall,
+			args: preparation.args,
+			context,
+		}) !== false
+	);
+}
+
+function insertCompletedToolCallSnapshot(state: LoopState, snapshot: CompletedToolCallSnapshot): void {
+	const toolCalls = state.currentAssistantMessage?.content.filter((content) => content.type === "toolCall") ?? [];
+	const snapshotIndex = toolCalls.findIndex((toolCall) => toolCall.id === snapshot.toolCallId);
+	const insertIndex = state.completedToolResults.findIndex((completed) => {
+		const completedIndex = toolCalls.findIndex((toolCall) => toolCall.id === completed.toolCallId);
+		return completedIndex !== -1 && (snapshotIndex === -1 || completedIndex > snapshotIndex);
+	});
+	if (insertIndex === -1) {
+		state.completedToolResults.push(snapshot);
+		return;
+	}
+	state.completedToolResults.splice(insertIndex, 0, snapshot);
 }
 
 function createCompletedToolCallSnapshot(

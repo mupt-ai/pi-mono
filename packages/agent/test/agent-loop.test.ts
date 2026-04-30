@@ -1207,6 +1207,234 @@ describe("stepped agent loop", () => {
 		expect(result.events.filter((event) => event.type === "turn_end")).toHaveLength(1);
 	});
 
+	it("should externalize stepped tool calls by default", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const tool: AgentTool<typeof toolSchema> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute() {
+				throw new Error("stepped loop should externalize by default");
+			},
+		};
+		const context: AgentContext = { systemPrompt: "", messages: [], tools: [tool] };
+		const config: AgentLoopConfig = { model: createModel(), convertToLlm: identityConverter };
+		const streamFn: StreamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				stream.push({
+					type: "done",
+					reason: "toolUse",
+					message: createAssistantMessage(
+						[{ type: "toolCall", id: "tool-1", name: "echo", arguments: { value: "hello" } }],
+						"toolUse",
+					),
+				});
+			});
+			return stream;
+		};
+
+		let state = initializeLoopState([createUserMessage("echo")], context, config);
+		const assistantStep = await stepLoop(
+			state,
+			{ type: "run_assistant_turn" },
+			{ config, tools: context.tools, streamFn },
+		);
+		state = assistantStep.state;
+		const prepareStep = await stepLoop(
+			state,
+			{ type: "prepare_tool_calls" },
+			{ config, tools: context.tools, streamFn },
+		);
+
+		expect(prepareStep.nextAction).toBe("complete_tool_call");
+		expect(prepareStep.toolExecutionRequests?.map((request) => request.toolCallId)).toEqual(["tool-1"]);
+	});
+
+	it("should execute a stepped tool internally when the routing hook returns false", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const tool: AgentTool<typeof toolSchema> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				return { content: [{ type: "text", text: params.value }], details: {} };
+			},
+		};
+		const context: AgentContext = { systemPrompt: "", messages: [], tools: [tool] };
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+			shouldExternalizeToolCall: () => false,
+		};
+		const streamFn: StreamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				stream.push({
+					type: "done",
+					reason: "toolUse",
+					message: createAssistantMessage(
+						[{ type: "toolCall", id: "tool-1", name: "echo", arguments: { value: "internal" } }],
+						"toolUse",
+					),
+				});
+			});
+			return stream;
+		};
+
+		let state = initializeLoopState([createUserMessage("echo")], context, config);
+		const assistantStep = await stepLoop(
+			state,
+			{ type: "run_assistant_turn" },
+			{ config, tools: context.tools, streamFn },
+		);
+		state = assistantStep.state;
+		const prepareStep = await stepLoop(
+			state,
+			{ type: "prepare_tool_calls" },
+			{ config, tools: context.tools, streamFn },
+		);
+
+		expect(prepareStep.nextAction).toBe("finalize_turn");
+		expect(prepareStep.toolExecutionRequests).toBeUndefined();
+		expect(prepareStep.state.completedToolResults[0]?.result.content).toEqual([{ type: "text", text: "internal" }]);
+	});
+
+	it("should route mixed stepped tool batches while preserving tool result order", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const internalTool: AgentTool<typeof toolSchema> = {
+			name: "internal",
+			label: "Internal",
+			description: "Internal tool",
+			parameters: toolSchema,
+			executionOwner: "runtime",
+			async execute() {
+				return { content: [{ type: "text", text: "internal-result" }], details: {} };
+			},
+		};
+		const hostTool: AgentTool<typeof toolSchema> = {
+			name: "host",
+			label: "Host",
+			description: "Host tool",
+			parameters: toolSchema,
+			executionOwner: "host",
+			async execute() {
+				throw new Error("host tool should be externalized");
+			},
+		};
+		const context: AgentContext = { systemPrompt: "", messages: [], tools: [hostTool, internalTool] };
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+			shouldExternalizeToolCall: ({ tool }) => tool.executionOwner !== "runtime",
+		};
+		const streamFn: StreamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				stream.push({
+					type: "done",
+					reason: "toolUse",
+					message: createAssistantMessage(
+						[
+							{ type: "toolCall", id: "tool-host", name: "host", arguments: { value: "host" } },
+							{ type: "toolCall", id: "tool-internal", name: "internal", arguments: { value: "internal" } },
+						],
+						"toolUse",
+					),
+				});
+			});
+			return stream;
+		};
+
+		const state = initializeLoopState([createUserMessage("run")], context, config);
+		const assistantStep = await stepLoop(
+			state,
+			{ type: "run_assistant_turn" },
+			{ config, tools: context.tools, streamFn },
+		);
+		const prepareStep = await stepLoop(
+			assistantStep.state,
+			{ type: "prepare_tool_calls" },
+			{ config, tools: context.tools, streamFn },
+		);
+
+		expect(prepareStep.toolExecutionRequests?.map((request) => request.toolCallId)).toEqual(["tool-host"]);
+		const completeStep = await stepLoop(
+			prepareStep.state,
+			{
+				type: "complete_tool_call",
+				toolCallId: "tool-host",
+				result: { content: [{ type: "text", text: "host-result" }], details: {} },
+				isError: false,
+			},
+			{ config, tools: context.tools, streamFn },
+		);
+
+		expect(completeStep.state.completedToolResults.map((result) => result.toolCallId)).toEqual([
+			"tool-host",
+			"tool-internal",
+		]);
+	});
+
+	it("should run beforeToolCall before stepped routing and afterToolCall for internal stepped tools", async () => {
+		const calls: string[] = [];
+		const toolSchema = Type.Object({ value: Type.String() });
+		const tool: AgentTool<typeof toolSchema> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute() {
+				calls.push("execute");
+				return { content: [{ type: "text", text: "result" }], details: {} };
+			},
+		};
+		const context: AgentContext = { systemPrompt: "", messages: [], tools: [tool] };
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+			beforeToolCall: async () => {
+				calls.push("before");
+				return undefined;
+			},
+			shouldExternalizeToolCall: () => {
+				calls.push("route");
+				return false;
+			},
+			afterToolCall: async () => {
+				calls.push("after");
+				return undefined;
+			},
+		};
+		const streamFn: StreamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				stream.push({
+					type: "done",
+					reason: "toolUse",
+					message: createAssistantMessage(
+						[{ type: "toolCall", id: "tool-1", name: "echo", arguments: { value: "hello" } }],
+						"toolUse",
+					),
+				});
+			});
+			return stream;
+		};
+
+		let state = initializeLoopState([createUserMessage("echo")], context, config);
+		const assistantStep = await stepLoop(
+			state,
+			{ type: "run_assistant_turn" },
+			{ config, tools: context.tools, streamFn },
+		);
+		state = assistantStep.state;
+		await stepLoop(state, { type: "prepare_tool_calls" }, { config, tools: context.tools, streamFn });
+
+		expect(calls).toEqual(["before", "route", "execute", "after"]);
+	});
+
 	it("should force stepped tool preparation to be sequential when a called tool requires sequential execution", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		const tool: AgentTool<typeof toolSchema, { value: string }> = {

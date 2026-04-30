@@ -21,6 +21,7 @@ import type {
 	BeforeToolCallContext,
 	BeforeToolCallResult,
 	ProviderExecutionMode,
+	ShouldExternalizeToolCallContext,
 	StreamFn,
 	ToolExecutionMode,
 } from "./types.js";
@@ -102,6 +103,7 @@ export interface AgentOptions {
 	onResponse?: SimpleStreamOptions["onResponse"];
 	beforeToolCall?: (context: BeforeToolCallContext, signal?: AbortSignal) => Promise<BeforeToolCallResult | undefined>;
 	afterToolCall?: (context: AfterToolCallContext, signal?: AbortSignal) => Promise<AfterToolCallResult | undefined>;
+	shouldExternalizeToolCall?: (context: ShouldExternalizeToolCallContext) => boolean;
 	steeringMode?: QueueMode;
 	followUpMode?: QueueMode;
 	sessionId?: string;
@@ -213,6 +215,7 @@ export class Agent {
 		context: AfterToolCallContext,
 		signal?: AbortSignal,
 	) => Promise<AfterToolCallResult | undefined>;
+	public shouldExternalizeToolCall?: (context: ShouldExternalizeToolCallContext) => boolean;
 	private activeRun?: ActiveRun;
 	/** Session identifier forwarded to providers for cache-aware backends. */
 	public sessionId?: string;
@@ -237,6 +240,7 @@ export class Agent {
 		this.onResponse = options.onResponse;
 		this.beforeToolCall = options.beforeToolCall;
 		this.afterToolCall = options.afterToolCall;
+		this.shouldExternalizeToolCall = options.shouldExternalizeToolCall;
 		this.steeringQueue = new PendingMessageQueue(options.steeringMode ?? "one-at-a-time");
 		this.followUpQueue = new PendingMessageQueue(options.followUpMode ?? "one-at-a-time");
 		this.sessionId = options.sessionId;
@@ -505,6 +509,7 @@ export class Agent {
 			providerExecution: this.providerExecution,
 			beforeToolCall: this.beforeToolCall,
 			afterToolCall: this.afterToolCall,
+			shouldExternalizeToolCall: this.shouldExternalizeToolCall,
 			convertToLlm: this.convertToLlm,
 			transformContext: this.transformContext,
 			getApiKey: this.getApiKey,
