@@ -2,7 +2,7 @@
 	"compilerOptions": {
 		"target": "ES2022",
 		"module": "Node16",
-		"lib": ["ES2022"],
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
 		"strict": true,
 		"esModuleInterop": true,
 		"skipLibCheck": true,
@@ -18,6 +18,11 @@
 		"experimentalDecorators": true,
 		"emitDecoratorMetadata": true,
 		"useDefineForClassFields": false,
-		"types": ["node"]
+		"types": ["node"],
+		"paths": {
+			"@mariozechner/pi-ai": ["./packages/ai/src/index.ts"],
+			"@mariozechner/pi-web-ui": ["./packages/web-ui/src/index.ts"],
+			"@mupt-ai/pi-agent-core": ["./packages/agent/src/index.ts"]
+		}
 	}
 }

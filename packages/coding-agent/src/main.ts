@@ -41,7 +41,7 @@ import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
-import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
+import { InteractiveMode, runPrintMode, runRpcMode, runSteppableRpcMode } from "./modes/index.js";
 import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.js";
@@ -93,11 +93,11 @@ function isTruthyEnvFlag(value: string | undefined): boolean {
 	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
 }
 
-type AppMode = "interactive" | "print" | "json" | "rpc";
+type AppMode = "interactive" | "print" | "json" | "rpc" | "steppable-rpc";
 
 function resolveAppMode(parsed: Args, stdinIsTTY: boolean): AppMode {
-	if (parsed.mode === "rpc") {
-		return "rpc";
+	if (parsed.mode === "rpc" || parsed.mode === "steppable-rpc") {
+		return parsed.mode;
 	}
 	if (parsed.mode === "json") {
 		return "json";
@@ -108,7 +108,7 @@ function resolveAppMode(parsed: Args, stdinIsTTY: boolean): AppMode {
 	return "interactive";
 }
 
-function toPrintOutputMode(appMode: AppMode): Exclude<Mode, "rpc"> {
+function toPrintOutputMode(appMode: AppMode): Exclude<Mode, "rpc" | "steppable-rpc"> {
 	return appMode === "json" ? "json" : "text";
 }
 
@@ -472,8 +472,8 @@ export async function main(args: string[], options?: MainOptions) {
 		process.exit(0);
 	}
 
-	if (parsed.mode === "rpc" && parsed.fileArgs.length > 0) {
-		console.error(chalk.red("Error: @file arguments are not supported in RPC mode"));
+	if ((parsed.mode === "rpc" || parsed.mode === "steppable-rpc") && parsed.fileArgs.length > 0) {
+		console.error(chalk.red("Error: @file arguments are not supported in RPC modes"));
 		process.exit(1);
 	}
 
@@ -494,7 +494,10 @@ export async function main(args: string[], options?: MainOptions) {
 	// the target session cwd is known. The startup-cwd settings manager is used only for
 	// sessionDir lookup during session selection.
 	const sessionDir = parsed.sessionDir ?? startupSettingsManager.getSessionDir();
-	let sessionManager = await createSessionManager(parsed, cwd, sessionDir, startupSettingsManager);
+	let sessionManager =
+		appMode === "steppable-rpc"
+			? SessionManager.inMemory(cwd)
+			: await createSessionManager(parsed, cwd, sessionDir, startupSettingsManager);
 	const missingSessionCwdIssue = getMissingSessionCwdIssue(sessionManager, cwd);
 	if (missingSessionCwdIssue) {
 		if (appMode === "interactive") {
@@ -631,9 +634,9 @@ export async function main(args: string[], options?: MainOptions) {
 		process.exit(0);
 	}
 
-	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
+	// Read piped stdin content (if any) - skip for RPC modes which use stdin for JSON-RPC
 	let stdinContent: string | undefined;
-	if (appMode !== "rpc") {
+	if (appMode !== "rpc" && appMode !== "steppable-rpc") {
 		stdinContent = await readPipedStdin();
 		if (stdinContent !== undefined && appMode === "interactive") {
 			appMode = "print";
@@ -677,6 +680,9 @@ export async function main(args: string[], options?: MainOptions) {
 	if (appMode === "rpc") {
 		printTimings();
 		await runRpcMode(runtime);
+	} else if (appMode === "steppable-rpc") {
+		printTimings();
+		await runSteppableRpcMode(runtime);
 	} else if (appMode === "interactive") {
 		if (scopedModels.length > 0 && (parsed.verbose || !settingsManager.getQuietStartup())) {
 			const modelList = scopedModels

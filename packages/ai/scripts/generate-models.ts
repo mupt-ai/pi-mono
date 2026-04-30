@@ -3,6 +3,7 @@
 import { writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { CLOUDFLARE_WORKERS_AI_BASE_URL } from "../src/providers/cloudflare.js";
 import {
 	Api,
 	type AnthropicMessagesCompat,
@@ -372,6 +373,33 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					},
 					contextWindow: m.limit?.context || 4096,
 					maxTokens: m.limit?.output || 4096,
+				});
+			}
+		}
+
+		// Process Cloudflare Workers AI models
+		if (data["cloudflare-workers-ai"]?.models) {
+			for (const [modelId, model] of Object.entries(data["cloudflare-workers-ai"].models)) {
+				const m = model as ModelsDevModel;
+				if (m.tool_call !== true) continue;
+
+				models.push({
+					id: modelId,
+					name: m.name || modelId,
+					api: "openai-completions",
+					provider: "cloudflare-workers-ai",
+					baseUrl: CLOUDFLARE_WORKERS_AI_BASE_URL,
+					reasoning: m.reasoning === true,
+					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					cost: {
+						input: m.cost?.input || 0,
+						output: m.cost?.output || 0,
+						cacheRead: m.cost?.cache_read || 0,
+						cacheWrite: m.cost?.cache_write || 0,
+					},
+					contextWindow: m.limit?.context || 4096,
+					maxTokens: m.limit?.output || 4096,
+					compat: { sendSessionAffinityHeaders: true },
 				});
 			}
 		}
@@ -1035,7 +1063,7 @@ async function generateModels() {
 			cost: {
 				input: 0.14,
 				output: 0.28,
-				cacheRead: 0.028,
+				cacheRead: 0.0028,
 				cacheWrite: 0,
 			},
 			contextWindow: 1000000,
@@ -1051,9 +1079,9 @@ async function generateModels() {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 1.74,
-				output: 3.48,
-				cacheRead: 0.145,
+				input: 0.435,
+				output: 0.87,
+				cacheRead: 0.003625,
 				cacheWrite: 0,
 			},
 			contextWindow: 1000000,
@@ -1067,7 +1095,13 @@ async function generateModels() {
 		if (candidate.api === "openai-completions" && candidate.id.includes("deepseek-v4")) {
 			candidate.compat = {
 				...candidate.compat,
-				requiresReasoningContentOnAssistantMessages: true,
+				...(candidate.provider === "openrouter"
+					? {
+							requiresReasoningContentOnAssistantMessages:
+								deepseekCompat.requiresReasoningContentOnAssistantMessages,
+							reasoningEffortMap: deepseekCompat.reasoningEffortMap,
+						}
+					: deepseekCompat),
 			};
 		}
 	}

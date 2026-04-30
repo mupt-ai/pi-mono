@@ -2,6 +2,44 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added top-level `name` support to `pi.registerProvider()` so extension-registered providers can show a friendly name in `/login` ([#3956](https://github.com/badlogic/pi-mono/issues/3956)).
+- Added `ctx.ui.getEditorComponent()` so extensions can wrap the currently configured custom editor factory ([#3935](https://github.com/badlogic/pi-mono/issues/3935)).
+
+### Fixed
+
+- Fixed project context discovery to load `AGENTS.MD` files in addition to `AGENTS.md` ([#3949](https://github.com/badlogic/pi-mono/issues/3949)).
+- Fixed `/handoff` to use compacted session context instead of pre-compaction raw messages ([#3945](https://github.com/badlogic/pi-mono/issues/3945)).
+- Fixed idle follow-up submission to clear the editor like normal message submission ([#3926](https://github.com/badlogic/pi-mono/issues/3926)).
+- Updated the sandbox extension example lockfile to resolve the vulnerable `lodash-es` transitive dependency ([#3901](https://github.com/badlogic/pi-mono/issues/3901)).
+
+## [0.70.6] - 2026-04-28
+
+### New Features
+
+- Cloudflare Workers AI provider support with `CLOUDFLARE_API_KEY`/`CLOUDFLARE_ACCOUNT_ID` setup. See [docs/providers.md#api-keys](docs/providers.md#api-keys). ([#3851](https://github.com/badlogic/pi-mono/pull/3851) by [@mchenco](https://github.com/mchenco))
+- Pi update checks now use `pi.dev` and identify Pi with a `pi/<version>` user agent. See [docs/packages.md](docs/packages.md). ([#3877](https://github.com/badlogic/pi-mono/pull/3877) by [@mitsuhiko](https://github.com/mitsuhiko))
+
+### Added
+
+- Added Cloudflare Workers AI as a built-in provider with `CLOUDFLARE_API_KEY`/`CLOUDFLARE_ACCOUNT_ID` setup, default model resolution, `/login` support, and provider documentation ([#3851](https://github.com/badlogic/pi-mono/pull/3851) by [@mchenco](https://github.com/mchenco)).
+
+### Changed
+
+- Changed Pi version checks to identify Pi with a `pi/<version>` user agent ([#3877](https://github.com/badlogic/pi-mono/pull/3877) by [@mitsuhiko](https://github.com/mitsuhiko)).
+
+### Fixed
+
+- Fixed config selector scroll indicators to show item counts instead of line counts ([#3820](https://github.com/badlogic/pi-mono/pull/3820) by [@aliou](https://github.com/aliou)).
+- Fixed exported HTML to escape embedded image data and session metadata, preventing crafted session content from injecting markup ([#3819](https://github.com/badlogic/pi-mono/pull/3819) by [@justinpbarnett](https://github.com/justinpbarnett), [#3883](https://github.com/badlogic/pi-mono/pull/3883) by [@justinpbarnett](https://github.com/justinpbarnett)).
+- Fixed Bun-based package manager startup by locating global `node_modules` relative to Bun's install layout ([#3861](https://github.com/badlogic/pi-mono/pull/3861) by [@thirtythreeforty](https://github.com/thirtythreeforty)).
+- Fixed Bedrock inference profile capability checks by normalizing profile ARNs to the underlying model name.
+- Fixed file discovery to fall back to `fdfind` when `fd` is unavailable.
+- Fixed `pi update` to skip self-update reinstalls when the installed version is already current ([#3853](https://github.com/badlogic/pi-mono/issues/3853)).
+- Fixed Cloudflare Workers AI attribution headers to honor the install telemetry setting.
+- Fixed `pi update --self` detection and execution for Windows package-manager shim installs, including symlinked global package roots, and print the manual fallback command when self-update fails ([#3857](https://github.com/badlogic/pi-mono/issues/3857)).
+
 ## [0.70.5] - 2026-04-27
 
 ### Fixed
