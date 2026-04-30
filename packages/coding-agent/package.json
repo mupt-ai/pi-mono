@@ -1,6 +1,6 @@
 {
 	"name": "@mupt-ai/pi-coding-agent",
-	"version": "0.70.7",
+	"version": "0.70.8",
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",
 	"piConfig": {
@@ -58,7 +58,7 @@
 		"undici": "^7.19.1",
 		"uuid": "^14.0.0",
 		"yaml": "^2.8.2",
-		"@mupt-ai/pi-agent-core": "^0.70.7"
+		"@mupt-ai/pi-agent-core": "^0.70.8"
 	},
 	"overrides": {
 		"rimraf": "6.1.2",
