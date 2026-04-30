@@ -20,7 +20,7 @@
 	},
 	"dependencies": {
 		"@anthropic-ai/sandbox-runtime": "^0.0.16",
-		"@mupt-ai/pi-agent-core": "^0.70.6",
+		"@mupt-ai/pi-agent-core": "^0.70.8",
 		"@mariozechner/pi-ai": "^0.70.6",
 		"@mariozechner/pi-coding-agent": "^0.70.6",
 		"typebox": "^1.1.24",
