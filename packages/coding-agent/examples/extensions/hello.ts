@@ -3,7 +3,7 @@
  */
 
 import { Type } from "@mariozechner/pi-ai";
-import { defineTool, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { defineTool, type ExtensionAPI } from "@mupt-ai/pi-coding-agent";
 
 const helloTool = defineTool({
 	name: "hello",

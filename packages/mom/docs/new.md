@@ -176,7 +176,7 @@ interface UserInfo {
 MomAgent wraps `AgentSession` from coding-agent. Agent is platform-agnostic; it just forwards events to the adapter.
 
 ```typescript
-import { type AgentSessionEvent } from "@mariozechner/pi-coding-agent";
+import { type AgentSessionEvent } from "@mupt-ai/pi-coding-agent";
 
 interface MomAgent {
   /**
