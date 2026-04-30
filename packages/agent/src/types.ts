@@ -104,6 +104,13 @@ export interface AfterToolCallContext {
 	context: AgentContext;
 }
 
+export interface ShouldExternalizeToolCallContext {
+	tool: AgentTool<any>;
+	toolCall: AgentToolCall;
+	args: unknown;
+	context: AgentContext;
+}
+
 export interface AgentLoopConfig extends SimpleStreamOptions {
 	model: Model<any>;
 
@@ -212,6 +219,13 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * Default: "internal"
 	 */
 	providerExecution?: ProviderExecutionMode;
+
+	/**
+	 * Controls whether a prepared tool call is surfaced to the host in stepped mode.
+	 * Return false to execute the tool inside the agent loop. If omitted, stepped mode
+	 * preserves existing behavior and externalizes all prepared tool calls.
+	 */
+	shouldExternalizeToolCall?: (context: ShouldExternalizeToolCallContext) => boolean;
 
 	/**
 	 * Called before a tool is executed, after arguments have been validated.
@@ -333,6 +347,15 @@ export interface AgentTool<TParameters extends TSchema = TSchema, TDetails = any
 		signal?: AbortSignal,
 		onUpdate?: AgentToolUpdateCallback<TDetails>,
 	) => Promise<AgentToolResult<TDetails>>;
+	/**
+	 * Owner responsible for executing this tool in stepped mode.
+	 * - "host": surface prepared calls to the stepped host for external execution.
+	 * - "runtime": execute prepared calls inside the agent runtime.
+	 *
+	 * If omitted, stepped mode preserves existing behavior and externalizes prepared calls.
+	 */
+	executionOwner?: "host" | "runtime";
+
 	/**
 	 * Per-tool execution mode override.
 	 * - "sequential": this tool must execute one at a time with other tool calls.

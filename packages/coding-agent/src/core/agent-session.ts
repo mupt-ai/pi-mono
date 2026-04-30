@@ -26,6 +26,7 @@ import {
 	initializeLoopState,
 	type LoopState,
 	type ProviderRequest,
+	type ShouldExternalizeToolCallContext,
 	type StepCommand,
 	stepLoop as stepCoreLoop,
 	type ThinkingLevel,
@@ -1565,6 +1566,8 @@ export class AgentSession {
 				providerExecution: this.agent.providerExecution,
 				beforeToolCall: this.agent.beforeToolCall,
 				afterToolCall: this.agent.afterToolCall,
+				shouldExternalizeToolCall: ({ tool }: ShouldExternalizeToolCallContext) =>
+					tool.executionOwner !== "runtime",
 				convertToLlm: this.agent.convertToLlm,
 				transformContext: this.agent.transformContext,
 				getApiKey: this.agent.getApiKey,
@@ -3192,14 +3195,16 @@ export class AgentSession {
 		const allowedToolNames = this._allowedToolNames;
 		const isAllowedTool = (name: string): boolean => !allowedToolNames || allowedToolNames.has(name);
 
-		const registeredTools = this._extensionRunner.getAllRegisteredTools();
-		const allCustomTools = [
-			...registeredTools,
-			...this._customTools.map((definition) => ({
+		const registeredTools = this._extensionRunner
+			.getAllRegisteredTools()
+			.filter((tool) => isAllowedTool(tool.definition.name));
+		const sdkTools = this._customTools
+			.map((definition) => ({
 				definition,
 				sourceInfo: createSyntheticSourceInfo(`<sdk:${definition.name}>`, { source: "sdk" }),
-			})),
-		].filter((tool) => isAllowedTool(tool.definition.name));
+			}))
+			.filter((tool) => isAllowedTool(tool.definition.name));
+		const allCustomTools = [...registeredTools, ...sdkTools];
 		const definitionRegistry = new Map<string, ToolDefinitionEntry>(
 			Array.from(this._baseToolDefinitions.entries())
 				.filter(([name]) => isAllowedTool(name))
@@ -3235,7 +3240,14 @@ export class AgentSession {
 				.filter((entry): entry is readonly [string, string[]] => entry !== undefined),
 		);
 		const runner = this._extensionRunner;
-		const wrappedExtensionTools = wrapRegisteredTools(allCustomTools, runner);
+		const wrappedExtensionTools = wrapRegisteredTools(registeredTools, runner).map((tool) => ({
+			...tool,
+			executionOwner: "runtime" as const,
+		}));
+		const wrappedSdkTools = wrapRegisteredTools(sdkTools, runner).map((tool) => ({
+			...tool,
+			executionOwner: "host" as const,
+		}));
 		const wrappedBuiltInTools = wrapRegisteredTools(
 			Array.from(this._baseToolDefinitions.values())
 				.filter((definition) => isAllowedTool(definition.name))
@@ -3246,8 +3258,9 @@ export class AgentSession {
 			runner,
 		);
 
-		const toolRegistry = new Map(wrappedBuiltInTools.map((tool) => [tool.name, tool]));
-		for (const tool of wrappedExtensionTools as AgentTool[]) {
+		const hostBuiltInTools = wrappedBuiltInTools.map((tool) => ({ ...tool, executionOwner: "host" as const }));
+		const toolRegistry = new Map<string, AgentTool>(hostBuiltInTools.map((tool) => [tool.name, tool]));
+		for (const tool of [...wrappedSdkTools, ...wrappedExtensionTools] as AgentTool[]) {
 			toolRegistry.set(tool.name, tool);
 		}
 		this._toolRegistry = toolRegistry;
@@ -3263,7 +3276,7 @@ export class AgentSession {
 				}
 			}
 		} else if (options?.includeAllExtensionTools) {
-			for (const tool of wrappedExtensionTools) {
+			for (const tool of [...wrappedSdkTools, ...wrappedExtensionTools]) {
 				nextActiveToolNames.push(tool.name);
 			}
 		} else if (!options?.activeToolNames) {
