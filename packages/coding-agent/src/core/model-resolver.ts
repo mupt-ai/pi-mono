@@ -32,11 +32,14 @@ export const defaultModelPerProvider: Record<KnownProvider, string> = {
 	mistral: "devstral-medium-latest",
 	minimax: "MiniMax-M2.7",
 	"minimax-cn": "MiniMax-M2.7",
+	moonshotai: "kimi-k2.6",
+	"moonshotai-cn": "kimi-k2.6",
 	huggingface: "moonshotai/Kimi-K2.6",
 	fireworks: "accounts/fireworks/models/kimi-k2p6",
 	opencode: "kimi-k2.6",
 	"opencode-go": "kimi-k2.6",
 	"kimi-coding": "kimi-for-coding",
+	"cloudflare-workers-ai": "@cf/moonshotai/kimi-k2.6",
 };
 
 export interface ScopedModel {
