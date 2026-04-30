@@ -350,7 +350,7 @@ pi.on("resources_discover", async (event, _ctx) => {
 
 ### Session Events
 
-See [session.md](session.md) for session storage internals and the SessionManager API.
+See [Session Format](session-format.md) for session storage internals and the SessionManager API.
 
 #### session_start
 
@@ -429,7 +429,7 @@ pi.on("session_compact", async (event, ctx) => {
 
 #### session_before_tree / session_tree
 
-Fired on `/tree` navigation. See [tree.md](tree.md) for tree navigation concepts.
+Fired on `/tree` navigation. See [Sessions](sessions.md) for tree navigation concepts.
 
 ```typescript
 pi.on("session_before_tree", async (event, ctx) => {
@@ -569,7 +569,7 @@ pi.on("tool_execution_end", async (event, ctx) => {
 
 #### context
 
-Fired before each LLM call. Modify messages non-destructively. See [session.md](session.md) for message types.
+Fired before each LLM call. Modify messages non-destructively. See [Session Format](session-format.md) for message types.
 
 ```typescript
 pi.on("context", async (event, ctx) => {
@@ -833,7 +833,7 @@ Current working directory.
 
 ### ctx.sessionManager
 
-Read-only access to session state. See [session.md](session.md) for the full SessionManager API and entry types.
+Read-only access to session state. See [Session Format](session-format.md) for the full SessionManager API and entry types.
 
 For `tool_call`, this state is synchronized through the current assistant message before handlers run. In parallel tool execution mode it is still not guaranteed to include sibling tool results from the same assistant message.
 
@@ -1515,6 +1515,7 @@ If you need to discover models from a remote endpoint, prefer an async extension
 ```typescript
 // Register a new provider with custom models
 pi.registerProvider("my-proxy", {
+  name: "My Proxy",
   baseUrl: "https://proxy.example.com",
   apiKey: "PROXY_API_KEY",  // env var name or literal
   api: "anthropic-messages",
@@ -1561,6 +1562,7 @@ pi.registerProvider("corporate-ai", {
 ```
 
 **Config options:**
+- `name` - Display name for the provider in UI such as `/login`.
 - `baseUrl` - API endpoint URL. Required when defining models.
 - `apiKey` - API key or environment variable name. Required when defining models (unless `oauth` provided).
 - `api` - API type: `"anthropic-messages"`, `"openai-completions"`, `"openai-responses"`, etc.
@@ -2225,6 +2227,10 @@ ctx.ui.setToolsExpanded(wasExpanded);
 
 // Custom editor (vim mode, emacs mode, etc.)
 ctx.ui.setEditorComponent((tui, theme, keybindings) => new VimEditor(tui, theme, keybindings));
+const currentEditor = ctx.ui.getEditorComponent();
+ctx.ui.setEditorComponent((tui, theme, keybindings) =>
+  new WrappedEditor(tui, theme, keybindings, currentEditor?.(tui, theme, keybindings))
+);
 ctx.ui.setEditorComponent(undefined);  // Restore default editor
 
 // Theme management (see themes.md for creating themes)
@@ -2379,7 +2385,17 @@ export default function (pi: ExtensionAPI) {
 - Extend `CustomEditor` (not base `Editor`) to get app keybindings (escape to abort, ctrl+d, model switching)
 - Call `super.handleInput(data)` for keys you don't handle
 - Factory receives `theme` and `keybindings` from the app
+- Use `ctx.ui.getEditorComponent()` before `setEditorComponent()` to wrap the previously configured custom editor
 - Pass `undefined` to restore default: `ctx.ui.setEditorComponent(undefined)`
+
+To compose with another extension that already replaced the editor, capture the previous factory before setting yours:
+
+```typescript
+const previous = ctx.ui.getEditorComponent();
+ctx.ui.setEditorComponent((tui, theme, keybindings) =>
+  new MyEditor(tui, theme, keybindings, { base: previous?.(tui, theme, keybindings) })
+);
+```
 
 See [tui.md](tui.md) Pattern 7 for a complete example with mode indicator.
 

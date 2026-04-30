@@ -3,6 +3,7 @@
 import { writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { CLOUDFLARE_WORKERS_AI_BASE_URL } from "../src/providers/cloudflare.js";
 import {
 	Api,
 	type AnthropicMessagesCompat,
@@ -376,6 +377,33 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			}
 		}
 
+		// Process Cloudflare Workers AI models
+		if (data["cloudflare-workers-ai"]?.models) {
+			for (const [modelId, model] of Object.entries(data["cloudflare-workers-ai"].models)) {
+				const m = model as ModelsDevModel;
+				if (m.tool_call !== true) continue;
+
+				models.push({
+					id: modelId,
+					name: m.name || modelId,
+					api: "openai-completions",
+					provider: "cloudflare-workers-ai",
+					baseUrl: CLOUDFLARE_WORKERS_AI_BASE_URL,
+					reasoning: m.reasoning === true,
+					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					cost: {
+						input: m.cost?.input || 0,
+						output: m.cost?.output || 0,
+						cacheRead: m.cost?.cache_read || 0,
+						cacheWrite: m.cost?.cache_write || 0,
+					},
+					contextWindow: m.limit?.context || 4096,
+					maxTokens: m.limit?.output || 4096,
+					compat: { sendSessionAffinityHeaders: true },
+				});
+			}
+		}
+
 		// Process xAi models
 		if (data.xai?.models) {
 			for (const [modelId, model] of Object.entries(data.xai.models)) {
@@ -701,6 +729,47 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					},
 					contextWindow: m.limit?.context || 4096,
 					maxTokens: m.limit?.output || 4096,
+				});
+			}
+		}
+
+		// Process Moonshot AI models
+		const moonshotVariants = [
+			{ key: "moonshotai", provider: "moonshotai", baseUrl: "https://api.moonshot.ai/v1" },
+			{ key: "moonshotai-cn", provider: "moonshotai-cn", baseUrl: "https://api.moonshot.cn/v1" },
+		] as const;
+		const moonshotCompat: OpenAICompletionsCompat = {
+			supportsStore: false,
+			supportsDeveloperRole: false,
+			supportsReasoningEffort: false,
+			maxTokensField: "max_tokens",
+			supportsStrictMode: false,
+		};
+
+		for (const { key, provider, baseUrl } of moonshotVariants) {
+			if (!data[key]?.models) continue;
+
+			for (const [modelId, model] of Object.entries(data[key].models)) {
+				const m = model as ModelsDevModel;
+				if (m.tool_call !== true) continue;
+
+				models.push({
+					id: modelId,
+					name: m.name || modelId,
+					api: "openai-completions",
+					provider,
+					baseUrl,
+					reasoning: m.reasoning === true,
+					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+					cost: {
+						input: m.cost?.input || 0,
+						output: m.cost?.output || 0,
+						cacheRead: m.cost?.cache_read || 0,
+						cacheWrite: m.cost?.cache_write || 0,
+					},
+					contextWindow: m.limit?.context || 4096,
+					maxTokens: m.limit?.output || 4096,
+					compat: moonshotCompat,
 				});
 			}
 		}
@@ -1035,7 +1104,7 @@ async function generateModels() {
 			cost: {
 				input: 0.14,
 				output: 0.28,
-				cacheRead: 0.028,
+				cacheRead: 0.0028,
 				cacheWrite: 0,
 			},
 			contextWindow: 1000000,
@@ -1051,9 +1120,9 @@ async function generateModels() {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 1.74,
-				output: 3.48,
-				cacheRead: 0.145,
+				input: 0.435,
+				output: 0.87,
+				cacheRead: 0.003625,
 				cacheWrite: 0,
 			},
 			contextWindow: 1000000,
@@ -1067,7 +1136,13 @@ async function generateModels() {
 		if (candidate.api === "openai-completions" && candidate.id.includes("deepseek-v4")) {
 			candidate.compat = {
 				...candidate.compat,
-				requiresReasoningContentOnAssistantMessages: true,
+				...(candidate.provider === "openrouter"
+					? {
+							requiresReasoningContentOnAssistantMessages:
+								deepseekCompat.requiresReasoningContentOnAssistantMessages,
+							reasoningEffortMap: deepseekCompat.reasoningEffortMap,
+						}
+					: deepseekCompat),
 			};
 		}
 	}
@@ -1242,6 +1317,27 @@ async function generateModels() {
 			},
 			contextWindow: 32768,
 			maxTokens: 8192,
+		});
+	}
+
+	// Add missing Mistral Medium 3.5 model until models.dev includes it
+	if (!allModels.some(m => m.provider === "mistral" && m.id === "mistral-medium-3.5")) {
+		allModels.push({
+			id: "mistral-medium-3.5",
+			name: "Mistral Medium 3.5",
+			api: "mistral-conversations",
+			provider: "mistral",
+			baseUrl: "https://api.mistral.ai",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 1.5,
+				output: 7.5,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 262144, // 256k tokens
+			maxTokens: 262144,
 		});
 	}
 
