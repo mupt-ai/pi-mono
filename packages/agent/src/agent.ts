@@ -387,9 +387,7 @@ export class Agent {
 			}
 
 			if (input.type === "user_message") {
-				if (this.steppable.pendingAction || this.steppable.phase !== "waiting_for_user") {
-					throw new Error("Cannot accept user_message while session is not waiting for user");
-				}
+				this.assertWaitingForUser();
 				this.steppable.newMessages = [input.message];
 				this.steppable.currentAssistantMessage = undefined;
 				this.steppable.completedToolResults = [];
@@ -746,6 +744,12 @@ export class Agent {
 
 	private result(events: AgentEvent[], nextAction: AgentSteppableNextAction): AgentSteppableResult {
 		return { state: this.snapshot(), events, nextAction };
+	}
+
+	private assertWaitingForUser(): void {
+		if (this.steppable.pendingAction || this.steppable.phase !== "waiting_for_user") {
+			throw new Error("Cannot accept user_message while session is not waiting for user");
+		}
 	}
 
 	private assertPending(callId: string, type: "call_llm" | "call_tool"): void {
