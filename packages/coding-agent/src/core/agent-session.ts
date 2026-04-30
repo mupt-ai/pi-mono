@@ -17,7 +17,18 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
 import { isContextOverflow, modelsAreEqual, resetApiProviders, supportsXhigh } from "@mariozechner/pi-ai";
-import type { Agent, AgentEvent, AgentMessage, AgentState, AgentTool, ThinkingLevel } from "@mupt-ai/pi-agent-core";
+import type {
+	Agent,
+	AgentEvent,
+	AgentMessage,
+	AgentState,
+	AgentSteppableInput,
+	AgentSteppableResult,
+	AgentSteppableSnapshot,
+	AgentSteppableToolExecutionResult,
+	AgentTool,
+	ThinkingLevel,
+} from "@mupt-ai/pi-agent-core";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { stripFrontmatter } from "../utils/frontmatter.js";
 import { sleep } from "../utils/sleep.js";
@@ -750,6 +761,26 @@ export class AgentSession {
 	/** Full agent state */
 	get state(): AgentState {
 		return this.agent.state;
+	}
+
+	/** Advance this session using the steppable agent protocol. */
+	advance(input: AgentSteppableInput): Promise<AgentSteppableResult> {
+		return this.agent.advance(input);
+	}
+
+	/** Return the latest JSON-serializable steppable snapshot. */
+	snapshot(): AgentSteppableSnapshot {
+		return this.agent.snapshot();
+	}
+
+	/** Restore a JSON-serializable steppable snapshot into this session runtime. */
+	restore(snapshot: AgentSteppableSnapshot): void {
+		this.agent.restore(snapshot);
+	}
+
+	/** Execute the pending sandbox tool for a steppable boundary. */
+	executeTool(callId: string): Promise<AgentSteppableToolExecutionResult> {
+		return this.agent.executeTool(callId);
 	}
 
 	/** Current model (may be undefined if not yet selected) */

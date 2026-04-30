@@ -70,8 +70,8 @@ let chatPanel: ChatPanel;
 let agentUnsubscribe: (() => void) | undefined;
 
 const generateTitle = (messages: AgentMessage[]): string => {
-	const firstUserMsg = messages.find((m) => m.role === "user" || m.role === "user-with-attachments");
-	if (!firstUserMsg || (firstUserMsg.role !== "user" && firstUserMsg.role !== "user-with-attachments")) return "";
+	const firstUserMsg = messages.find((m) => m.role === "user");
+	if (!firstUserMsg || firstUserMsg.role !== "user") return "";
 
 	let text = "";
 	const content = firstUserMsg.content;
@@ -79,8 +79,8 @@ const generateTitle = (messages: AgentMessage[]): string => {
 	if (typeof content === "string") {
 		text = content;
 	} else {
-		const textBlocks = content.filter((c: any) => c.type === "text");
-		text = textBlocks.map((c: any) => c.text || "").join(" ");
+		const textBlocks = content.filter((block) => block.type === "text");
+		text = textBlocks.map((block) => block.text).join(" ");
 	}
 
 	text = text.trim();
