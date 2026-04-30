@@ -299,6 +299,9 @@ export {
 	type RpcSessionState,
 	runPrintMode,
 	runRpcMode,
+	runSteppableRpcMode,
+	type SteppableRpcCommand,
+	type SteppableRpcResponse,
 } from "./modes/index.js";
 // UI components for extensions
 export {
