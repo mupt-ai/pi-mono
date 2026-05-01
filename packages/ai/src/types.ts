@@ -41,7 +41,9 @@ export type KnownProvider =
 	| "opencode"
 	| "opencode-go"
 	| "kimi-coding"
-	| "cloudflare-workers-ai";
+	| "cloudflare-workers-ai"
+	| "cloudflare-ai-gateway"
+	| "xiaomi";
 export type Provider = KnownProvider | string;
 
 export type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -57,7 +59,7 @@ export interface ThinkingBudgets {
 // Base options all providers share
 export type CacheRetention = "none" | "short" | "long";
 
-export type Transport = "sse" | "websocket" | "auto";
+export type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
 
 export interface ProviderResponse {
 	status: number;

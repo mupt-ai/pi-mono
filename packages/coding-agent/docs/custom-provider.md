@@ -13,7 +13,6 @@ See these complete provider examples:
 
 - [`examples/extensions/custom-provider-anthropic/`](../examples/extensions/custom-provider-anthropic/)
 - [`examples/extensions/custom-provider-gitlab-duo/`](../examples/extensions/custom-provider-gitlab-duo/)
-- [`examples/extensions/custom-provider-qwen-cli/`](../examples/extensions/custom-provider-qwen-cli/)
 
 ## Table of Contents
 
@@ -595,6 +594,9 @@ interface ProviderModelConfig {
 
   /** API type override for this specific model. */
   api?: Api;
+
+  /** API endpoint URL override for this specific model. */
+  baseUrl?: string;
 
   /** Whether the model supports extended thinking. */
   reasoning: boolean;
