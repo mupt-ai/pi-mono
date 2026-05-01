@@ -3,6 +3,7 @@ export const BUILT_IN_PROVIDER_DISPLAY_NAMES: Record<string, string> = {
 	"amazon-bedrock": "Amazon Bedrock",
 	"azure-openai-responses": "Azure OpenAI Responses",
 	cerebras: "Cerebras",
+	"cloudflare-ai-gateway": "Cloudflare AI Gateway",
 	"cloudflare-workers-ai": "Cloudflare Workers AI",
 	deepseek: "DeepSeek",
 	fireworks: "Fireworks",
@@ -23,4 +24,5 @@ export const BUILT_IN_PROVIDER_DISPLAY_NAMES: Record<string, string> = {
 	"vercel-ai-gateway": "Vercel AI Gateway",
 	xai: "xAI",
 	zai: "ZAI",
+	xiaomi: "Xiaomi MiMo",
 };

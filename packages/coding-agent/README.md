@@ -116,6 +116,7 @@ For each built-in provider, pi maintains a list of tool-capable models, updated 
 - Mistral
 - Groq
 - Cerebras
+- Cloudflare AI Gateway
 - Cloudflare Workers AI
 - xAI
 - OpenRouter
@@ -127,6 +128,7 @@ For each built-in provider, pi maintains a list of tool-capable models, updated 
 - Fireworks
 - Kimi For Coding
 - MiniMax
+- Xiaomi MiMo
 
 See [docs/providers.md](docs/providers.md) for detailed setup instructions.
 

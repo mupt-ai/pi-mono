@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `shouldStopAfterTurn` to the low-level agent loop config for gracefully exiting after a completed turn before polling queued messages or starting another LLM call.
+
+## [0.71.1] - 2026-05-01
+
+## [0.71.0] - 2026-04-30
+
 ## [0.70.6] - 2026-04-28
 
 ## [0.70.5] - 2026-04-27
