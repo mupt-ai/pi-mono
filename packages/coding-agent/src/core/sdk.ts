@@ -89,6 +89,10 @@ export interface CreateAgentSessionResult {
 	modelFallbackMessage?: string;
 }
 
+export type SteppableSession = AgentSession;
+export type CreateSteppableSessionOptions = CreateAgentSessionOptions;
+export type CreateSteppableSessionResult = CreateAgentSessionResult;
+
 // Re-exports
 
 export * from "./agent-session-runtime.js";
@@ -408,4 +412,14 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		extensionsResult,
 		modelFallbackMessage,
 	};
+}
+
+export async function createSteppableSession(
+	options: CreateSteppableSessionOptions = {},
+): Promise<CreateSteppableSessionResult> {
+	const cwd = options.cwd ?? options.sessionManager?.getCwd() ?? process.cwd();
+	return createAgentSession({
+		...options,
+		sessionManager: options.sessionManager ?? SessionManager.inMemory(cwd),
+	});
 }
