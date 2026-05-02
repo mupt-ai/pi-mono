@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.72.1] - 2026-05-02
+
+## [0.72.0] - 2026-05-01
+
 ### Breaking Changes
 
 - Replaced `OpenAICompletionsCompat.reasoningEffortMap` with top-level `Model.thinkingLevelMap` for model-specific thinking controls ([#3208](https://github.com/badlogic/pi-mono/issues/3208)). Migration: move mappings from `model.compat.reasoningEffortMap` to `model.thinkingLevelMap`. See `packages/ai/README.md#custom-models` and `packages/coding-agent/docs/models.md#thinking-level-map`. Map values keep the same provider-specific string semantics, and `null` marks a pi thinking level unsupported. Example:
@@ -16,8 +20,13 @@
 
 ### Added
 
-- Added Xiaomi MiMo provider (openai-completions compatible) with `XIAOMI_API_KEY` authentication.
+- Added Xiaomi MiMo Token Plan provider (Anthropic-compatible) with `XIAOMI_API_KEY` authentication ([#4005](https://github.com/badlogic/pi-mono/pull/4005) by [@Phoen1xCode](https://github.com/Phoen1xCode)).
 - Added `Model.thinkingLevelMap`, `getSupportedThinkingLevels()`, and `clampThinkingLevel()` so model metadata can describe supported thinking levels and provider-specific level values ([#3208](https://github.com/badlogic/pi-mono/issues/3208)).
+
+### Fixed
+
+- Fixed OpenAI Codex Responses `streamSimple()` to honor the configured transport instead of always using SSE, and made `auto` the default transport with cached WebSocket context when available ([#4083](https://github.com/badlogic/pi-mono/issues/4083)).
+- Fixed Xiaomi MiMo model catalog to use the Token Plan Anthropic endpoint instead of the direct API ([#3912](https://github.com/badlogic/pi-mono/issues/3912)).
 
 ## [0.71.1] - 2026-05-01
 
