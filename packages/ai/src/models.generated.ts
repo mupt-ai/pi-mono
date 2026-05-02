@@ -8463,9 +8463,9 @@ export const MODELS = {
 		"minimax-m2.7": {
 			id: "minimax-m2.7",
 			name: "MiniMax M2.7",
-			api: "anthropic-messages",
+			api: "openai-completions",
 			provider: "opencode-go",
-			baseUrl: "https://opencode.ai/zen/go",
+			baseUrl: "https://opencode.ai/zen/go/v1",
 			reasoning: true,
 			input: ["text"],
 			cost: {
@@ -8476,13 +8476,14 @@ export const MODELS = {
 			},
 			contextWindow: 204800,
 			maxTokens: 131072,
-		} satisfies Model<"anthropic-messages">,
+		} satisfies Model<"openai-completions">,
 		"qwen3.5-plus": {
 			id: "qwen3.5-plus",
 			name: "Qwen3.5 Plus",
-			api: "anthropic-messages",
+			api: "openai-completions",
 			provider: "opencode-go",
-			baseUrl: "https://opencode.ai/zen/go",
+			baseUrl: "https://opencode.ai/zen/go/v1",
+			compat: {"thinkingFormat":"qwen"},
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -8493,13 +8494,14 @@ export const MODELS = {
 			},
 			contextWindow: 262144,
 			maxTokens: 65536,
-		} satisfies Model<"anthropic-messages">,
+		} satisfies Model<"openai-completions">,
 		"qwen3.6-plus": {
 			id: "qwen3.6-plus",
 			name: "Qwen3.6 Plus",
-			api: "anthropic-messages",
+			api: "openai-completions",
 			provider: "opencode-go",
-			baseUrl: "https://opencode.ai/zen/go",
+			baseUrl: "https://opencode.ai/zen/go/v1",
+			compat: {"thinkingFormat":"qwen"},
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -8510,7 +8512,7 @@ export const MODELS = {
 			},
 			contextWindow: 262144,
 			maxTokens: 65536,
-		} satisfies Model<"anthropic-messages">,
+		} satisfies Model<"openai-completions">,
 	},
 	"openrouter": {
 		"ai21/jamba-large-1.7": {
@@ -12332,13 +12334,13 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
-				input: 0.325,
-				output: 3.25,
+				input: 0.32,
+				output: 3.1999999999999997,
 				cacheRead: 0,
 				cacheWrite: 0,
 			},
-			contextWindow: 256000,
-			maxTokens: 65536,
+			contextWindow: 262144,
+			maxTokens: 81920,
 		} satisfies Model<"openai-completions">,
 		"qwen/qwen3.6-flash": {
 			id: "qwen/qwen3.6-flash",
@@ -16392,9 +16394,9 @@ export const MODELS = {
 		"mimo-v2-flash": {
 			id: "mimo-v2-flash",
 			name: "MiMo-V2-Flash",
-			api: "openai-completions",
+			api: "anthropic-messages",
 			provider: "xiaomi",
-			baseUrl: "https://api.xiaomimimo.com/v1",
+			baseUrl: "https://token-plan-ams.xiaomimimo.com/anthropic",
 			reasoning: true,
 			input: ["text"],
 			cost: {
@@ -16405,13 +16407,13 @@ export const MODELS = {
 			},
 			contextWindow: 256000,
 			maxTokens: 64000,
-		} satisfies Model<"openai-completions">,
+		} satisfies Model<"anthropic-messages">,
 		"mimo-v2-omni": {
 			id: "mimo-v2-omni",
 			name: "MiMo-V2-Omni",
-			api: "openai-completions",
+			api: "anthropic-messages",
 			provider: "xiaomi",
-			baseUrl: "https://api.xiaomimimo.com/v1",
+			baseUrl: "https://token-plan-ams.xiaomimimo.com/anthropic",
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -16422,13 +16424,13 @@ export const MODELS = {
 			},
 			contextWindow: 256000,
 			maxTokens: 128000,
-		} satisfies Model<"openai-completions">,
+		} satisfies Model<"anthropic-messages">,
 		"mimo-v2-pro": {
 			id: "mimo-v2-pro",
 			name: "MiMo-V2-Pro",
-			api: "openai-completions",
+			api: "anthropic-messages",
 			provider: "xiaomi",
-			baseUrl: "https://api.xiaomimimo.com/v1",
+			baseUrl: "https://token-plan-ams.xiaomimimo.com/anthropic",
 			reasoning: true,
 			input: ["text"],
 			cost: {
@@ -16439,13 +16441,13 @@ export const MODELS = {
 			},
 			contextWindow: 1000000,
 			maxTokens: 128000,
-		} satisfies Model<"openai-completions">,
+		} satisfies Model<"anthropic-messages">,
 		"mimo-v2.5": {
 			id: "mimo-v2.5",
 			name: "MiMo-V2.5",
-			api: "openai-completions",
+			api: "anthropic-messages",
 			provider: "xiaomi",
-			baseUrl: "https://api.xiaomimimo.com/v1",
+			baseUrl: "https://token-plan-ams.xiaomimimo.com/anthropic",
 			reasoning: true,
 			input: ["text"],
 			cost: {
@@ -16456,13 +16458,13 @@ export const MODELS = {
 			},
 			contextWindow: 1048576,
 			maxTokens: 131072,
-		} satisfies Model<"openai-completions">,
+		} satisfies Model<"anthropic-messages">,
 		"mimo-v2.5-pro": {
 			id: "mimo-v2.5-pro",
 			name: "MiMo-V2.5-Pro",
-			api: "openai-completions",
+			api: "anthropic-messages",
 			provider: "xiaomi",
-			baseUrl: "https://api.xiaomimimo.com/v1",
+			baseUrl: "https://token-plan-ams.xiaomimimo.com/anthropic",
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -16473,7 +16475,7 @@ export const MODELS = {
 			},
 			contextWindow: 1048576,
 			maxTokens: 131072,
-		} satisfies Model<"openai-completions">,
+		} satisfies Model<"anthropic-messages">,
 	},
 	"zai": {
 		"glm-4.5-air": {
