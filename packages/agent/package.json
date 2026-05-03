@@ -43,6 +43,6 @@
 		"vitest": "^3.2.4"
 	},
 	"publishConfig": {
-		"registry": "https://npm.pkg.github.com"
+		"access": "public"
 	}
 }

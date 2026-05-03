@@ -6,7 +6,7 @@ const BUMP_TYPE = process.argv[2];
 const ALLOWED_BUMPS = new Set(["patch", "minor"]);
 
 if (!ALLOWED_BUMPS.has(BUMP_TYPE)) {
-	console.error("Usage: node scripts/version-github-packages.mjs <patch|minor>");
+	console.error("Usage: node scripts/version-npm-packages.mjs <patch|minor>");
 	process.exit(1);
 }
 
@@ -42,6 +42,6 @@ codingAgentPackage.version = nextVersion;
 codingAgentPackage.dependencies["@mupt-ai/pi-agent-core"] = `^${nextVersion}`;
 writePackageJson(agentPath, agentPackage);
 writePackageJson(codingAgentPath, codingAgentPackage);
-console.log(`Updated GitHub Packages release version to ${nextVersion}`);
+console.log(`Updated npm release version to ${nextVersion}`);
 console.log(`  ${agentPackage.name}: ${nextVersion}`);
 console.log(`  ${codingAgentPackage.name}: ${nextVersion}`);
