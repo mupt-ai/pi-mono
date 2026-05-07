@@ -222,7 +222,7 @@ export function getSelfUpdateCommand(packageName: string, npmCommand?: string[])
 export function getSelfUpdateUnavailableInstruction(packageName: string, npmCommand?: string[]): string {
 	const method = detectInstallMethod();
 	if (method === "bun-binary") {
-		return `Download from: https://github.com/badlogic/pi-mono/releases/latest`;
+		return `Download from: https://github.com/earendil-works/pi/releases/latest`;
 	}
 	const command = getSelfUpdateCommandForMethod(method, packageName, npmCommand);
 	if (command) {
