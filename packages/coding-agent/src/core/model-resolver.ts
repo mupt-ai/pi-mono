@@ -2,8 +2,8 @@
  * Model resolution, scoping, and initial selection
  */
 
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { type Api, type KnownProvider, type Model, modelsAreEqual } from "@mariozechner/pi-ai";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { type Api, type KnownProvider, type Model, modelsAreEqual } from "@earendil-works/pi-ai";
 import chalk from "chalk";
 import { minimatch } from "minimatch";
 import { isValidThinkingLevel } from "../cli/args.js";
@@ -40,6 +40,9 @@ export const defaultModelPerProvider: Record<KnownProvider, string> = {
 	"cloudflare-workers-ai": "@cf/moonshotai/kimi-k2.6",
 	"cloudflare-ai-gateway": "workers-ai/@cf/moonshotai/kimi-k2.6",
 	xiaomi: "mimo-v2.5-pro",
+	"xiaomi-token-plan-cn": "mimo-v2.5-pro",
+	"xiaomi-token-plan-ams": "mimo-v2.5-pro",
+	"xiaomi-token-plan-sgp": "mimo-v2.5-pro",
 };
 
 export interface ScopedModel {

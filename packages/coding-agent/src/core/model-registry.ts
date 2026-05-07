@@ -17,8 +17,8 @@ import {
 	registerApiProvider,
 	resetApiProviders,
 	type SimpleStreamOptions,
-} from "@mariozechner/pi-ai";
-import { registerOAuthProvider, resetOAuthProviders } from "@mariozechner/pi-ai/oauth";
+} from "@earendil-works/pi-ai";
+import { registerOAuthProvider, resetOAuthProviders } from "@earendil-works/pi-ai/oauth";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { type Static, Type } from "typebox";
@@ -211,6 +211,13 @@ function formatValidationPath(error: TLocalizedValidationError): string {
 	}
 	const path = error.instancePath.replace(/^\//, "").replace(/\//g, ".");
 	return path || "root";
+}
+
+/** Strip `//` line comments and trailing commas from JSON, leaving string literals untouched. */
+function stripJsonComments(input: string): string {
+	return input
+		.replace(/"(?:\\.|[^"\\])*"|\/\/[^\n]*/g, (m) => (m[0] === '"' ? m : ""))
+		.replace(/"(?:\\.|[^"\\])*"|,(\s*[}\]])/g, (m, tail) => tail ?? (m[0] === '"' ? m : ""));
 }
 
 /** Provider override config (baseUrl, compat) without request auth/headers */
@@ -450,7 +457,7 @@ export class ModelRegistry {
 
 		try {
 			const content = readFileSync(modelsJsonPath, "utf-8");
-			const parsed = JSON.parse(content) as unknown;
+			const parsed = JSON.parse(stripJsonComments(content)) as unknown;
 
 			if (!validateModelsConfig.Check(parsed)) {
 				const errors =
