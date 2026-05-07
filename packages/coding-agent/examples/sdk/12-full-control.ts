@@ -4,7 +4,7 @@
  * Replace everything - no discovery, explicit configuration.
  */
 
-import { getModel } from "@mariozechner/pi-ai";
+import { getModel } from "@mupt-ai/pi-ai";
 import {
 	AuthStorage,
 	createAgentSession,

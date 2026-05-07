@@ -15,7 +15,6 @@
  */
 
 import { mkdtemp, writeFile } from "node:fs/promises";
-import { Text } from "@mariozechner/pi-tui";
 import type { ExtensionAPI } from "@mupt-ai/pi-coding-agent";
 import {
 	DEFAULT_MAX_BYTES,
@@ -25,6 +24,7 @@ import {
 	truncateHead,
 	withFileMutationQueue,
 } from "@mupt-ai/pi-coding-agent";
+import { Text } from "@mupt-ai/pi-tui";
 import { execSync } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";

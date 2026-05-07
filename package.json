@@ -30,15 +30,7 @@
 		"release:patch": "node scripts/release.mjs patch",
 		"release:minor": "node scripts/release.mjs minor",
 		"release:major": "node scripts/release.mjs major",
-		"prepare": "husky",
-		"version:npm-packages:patch": "node scripts/version-npm-packages.mjs patch && npm install",
-		"version:npm-packages:minor": "node scripts/version-npm-packages.mjs minor && npm install",
-		"publish:agent": "npm --workspace packages/agent publish --access public --provenance",
-		"publish:coding-agent": "npm --workspace packages/coding-agent publish --access public --provenance",
-		"publish:agent:dry": "npm --workspace packages/agent publish --access public --provenance --dry-run",
-		"publish:coding-agent:dry": "npm --workspace packages/coding-agent publish --access public --provenance --dry-run",
-		"publish:npm": "npm run publish:agent && npm run publish:coding-agent",
-		"publish:npm:dry": "npm run publish:agent:dry && npm run publish:coding-agent:dry"
+		"prepare": "husky"
 	},
 	"devDependencies": {
 		"@anthropic-ai/sandbox-runtime": "^0.0.26",
@@ -47,6 +39,7 @@
 		"@typescript/native-preview": "7.0.0-dev.20260120.1",
 		"concurrently": "^9.2.1",
 		"husky": "^9.1.7",
+		"jiti": "^2.7.0",
 		"tsx": "^4.20.3",
 		"typescript": "^5.9.2",
 		"shx": "^0.4.0"
@@ -56,7 +49,6 @@
 	},
 	"version": "0.0.3",
 	"dependencies": {
-		"@mariozechner/jiti": "^2.6.5",
 		"@mupt-ai/pi-coding-agent": "^0.30.2",
 		"get-east-asian-width": "^1.4.0"
 	},

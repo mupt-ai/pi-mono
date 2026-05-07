@@ -1,5 +1,5 @@
-import { fauxAssistantMessage, fauxToolCall } from "@mariozechner/pi-ai";
 import type { AgentTool } from "@mupt-ai/pi-agent-core";
+import { fauxAssistantMessage, fauxToolCall } from "@mupt-ai/pi-ai";
 import type { ExtensionAPI } from "@mupt-ai/pi-coding-agent";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";

@@ -12,8 +12,8 @@
  * The generated prompt appears as a draft in the editor for review/editing.
  */
 
-import { complete, type Message } from "@mariozechner/pi-ai";
 import type { AgentMessage } from "@mupt-ai/pi-agent-core";
+import { complete, type Message } from "@mupt-ai/pi-ai";
 import type { ExtensionAPI, SessionEntry } from "@mupt-ai/pi-coding-agent";
 import { BorderedLoader, convertToLlm, serializeConversation } from "@mupt-ai/pi-coding-agent";
 

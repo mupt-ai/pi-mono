@@ -1,7 +1,7 @@
 // Main chat interface
 
-export type { Model } from "@mariozechner/pi-ai";
 export type { Agent, AgentMessage, AgentState, ThinkingLevel } from "@mupt-ai/pi-agent-core";
+export type { Model } from "@mupt-ai/pi-ai";
 export { ChatPanel } from "./ChatPanel.js";
 // Components
 export { AgentInterface } from "./components/AgentInterface.js";

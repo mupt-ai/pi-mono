@@ -2,8 +2,8 @@
  * Shared utilities for compaction and branch summarization.
  */
 
-import type { Message } from "@mariozechner/pi-ai";
 import type { AgentMessage } from "@mupt-ai/pi-agent-core";
+import type { Message } from "@mupt-ai/pi-ai";
 
 // ============================================================================
 // File Operation Tracking

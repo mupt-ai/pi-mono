@@ -368,7 +368,7 @@ When you pass a custom `ResourceLoader`, `cwd` and `agentDir` no longer control 
 ### Model
 
 ```typescript
-import { getModel } from "@mariozechner/pi-ai";
+import { getModel } from "@mupt-ai/pi-ai";
 import { AuthStorage, ModelRegistry } from "@mupt-ai/pi-coding-agent";
 
 const authStorage = AuthStorage.create();
@@ -881,7 +881,7 @@ interface LoadExtensionsResult {
 ## Complete Example
 
 ```typescript
-import { getModel } from "@mariozechner/pi-ai";
+import { getModel } from "@mupt-ai/pi-ai";
 import { Type } from "typebox";
 import {
   AuthStorage,

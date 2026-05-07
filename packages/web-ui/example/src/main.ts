@@ -1,5 +1,6 @@
 import "@mariozechner/mini-lit/dist/ThemeToggle.js";
-import { getModel } from "@mariozechner/pi-ai";
+import { Agent, type AgentMessage } from "@mupt-ai/pi-agent-core";
+import { getModel, type TextContent } from "@mupt-ai/pi-ai";
 import {
 	type AgentState,
 	ApiKeyPromptDialog,
@@ -17,8 +18,7 @@ import {
 	SettingsDialog,
 	SettingsStore,
 	setAppStorage,
-} from "@mariozechner/pi-web-ui";
-import { Agent, type AgentMessage } from "@mupt-ai/pi-agent-core";
+} from "@mupt-ai/pi-web-ui";
 import { html, render } from "lit";
 import { Bell, History, Plus, Settings } from "lucide";
 import "./app.css";
@@ -71,7 +71,7 @@ let agentUnsubscribe: (() => void) | undefined;
 
 const generateTitle = (messages: AgentMessage[]): string => {
 	const firstUserMsg = messages.find((m) => m.role === "user");
-	if (!firstUserMsg || firstUserMsg.role !== "user") return "";
+	if (!firstUserMsg) return "";
 
 	let text = "";
 	const content = firstUserMsg.content;
@@ -79,8 +79,8 @@ const generateTitle = (messages: AgentMessage[]): string => {
 	if (typeof content === "string") {
 		text = content;
 	} else {
-		const textBlocks = content.filter((block) => block.type === "text");
-		text = textBlocks.map((block) => block.text).join(" ");
+		const textBlocks = content.filter((c): c is TextContent => c.type === "text");
+		text = textBlocks.map((c) => c.text || "").join(" ");
 	}
 
 	text = text.trim();
@@ -94,8 +94,8 @@ const generateTitle = (messages: AgentMessage[]): string => {
 };
 
 const shouldSaveSession = (messages: AgentMessage[]): boolean => {
-	const hasUserMsg = messages.some((m: any) => m.role === "user" || m.role === "user-with-attachments");
-	const hasAssistantMsg = messages.some((m: any) => m.role === "assistant");
+	const hasUserMsg = messages.some((m) => m.role === "user");
+	const hasAssistantMsg = messages.some((m) => m.role === "assistant");
 	return hasUserMsg && hasAssistantMsg;
 };
 

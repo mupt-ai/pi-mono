@@ -1,7 +1,6 @@
 /**
  * Extension loader - loads TypeScript extension modules using jiti.
  *
- * Uses @mariozechner/jiti fork with virtualModules support for compiled Bun binaries.
  */
 
 import * as fs from "node:fs";
@@ -9,12 +8,12 @@ import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createJiti } from "@mariozechner/jiti";
-import * as _bundledPiAi from "@mariozechner/pi-ai";
-import * as _bundledPiAiOauth from "@mariozechner/pi-ai/oauth";
-import type { KeyId } from "@mariozechner/pi-tui";
-import * as _bundledPiTui from "@mariozechner/pi-tui";
 import * as _bundledPiAgentCore from "@mupt-ai/pi-agent-core";
+import * as _bundledPiAi from "@mupt-ai/pi-ai";
+import * as _bundledPiAiOauth from "@mupt-ai/pi-ai/oauth";
+import type { KeyId } from "@mupt-ai/pi-tui";
+import * as _bundledPiTui from "@mupt-ai/pi-tui";
+import { createJiti } from "jiti/static";
 // Static imports of packages that extensions may use.
 // These MUST be static so Bun bundles them into the compiled binary.
 // The virtualModules option then makes them available to extensions.
@@ -50,10 +49,15 @@ const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@sinclair/typebox/compile": _bundledTypeboxCompile,
 	"@sinclair/typebox/value": _bundledTypeboxValue,
 	"@mupt-ai/pi-agent-core": _bundledPiAgentCore,
+	"@mupt-ai/pi-tui": _bundledPiTui,
+	"@mupt-ai/pi-ai": _bundledPiAi,
+	"@mupt-ai/pi-ai/oauth": _bundledPiAiOauth,
+	"@mupt-ai/pi-coding-agent": _bundledPiCodingAgent,
+	"@mariozechner/pi-agent-core": _bundledPiAgentCore,
 	"@mariozechner/pi-tui": _bundledPiTui,
 	"@mariozechner/pi-ai": _bundledPiAi,
 	"@mariozechner/pi-ai/oauth": _bundledPiAiOauth,
-	"@mupt-ai/pi-coding-agent": _bundledPiCodingAgent,
+	"@mariozechner/pi-coding-agent": _bundledPiCodingAgent,
 };
 
 const require = createRequire(import.meta.url);
@@ -83,12 +87,23 @@ function getAliases(): Record<string, string> {
 		return fileURLToPath(import.meta.resolve(specifier));
 	};
 
+	const piCodingAgentEntry = packageIndex;
+	const piAgentCoreEntry = resolveWorkspaceOrImport("agent/dist/index.js", "@mupt-ai/pi-agent-core");
+	const piTuiEntry = resolveWorkspaceOrImport("tui/dist/index.js", "@mupt-ai/pi-tui");
+	const piAiEntry = resolveWorkspaceOrImport("ai/dist/index.js", "@mupt-ai/pi-ai");
+	const piAiOauthEntry = resolveWorkspaceOrImport("ai/dist/oauth.js", "@mupt-ai/pi-ai/oauth");
+
 	_aliases = {
-		"@mupt-ai/pi-coding-agent": packageIndex,
-		"@mupt-ai/pi-agent-core": resolveWorkspaceOrImport("agent/dist/index.js", "@mupt-ai/pi-agent-core"),
-		"@mariozechner/pi-tui": resolveWorkspaceOrImport("tui/dist/index.js", "@mariozechner/pi-tui"),
-		"@mariozechner/pi-ai": resolveWorkspaceOrImport("ai/dist/index.js", "@mariozechner/pi-ai"),
-		"@mariozechner/pi-ai/oauth": resolveWorkspaceOrImport("ai/dist/oauth.js", "@mariozechner/pi-ai/oauth"),
+		"@mupt-ai/pi-coding-agent": piCodingAgentEntry,
+		"@mupt-ai/pi-agent-core": piAgentCoreEntry,
+		"@mupt-ai/pi-tui": piTuiEntry,
+		"@mupt-ai/pi-ai": piAiEntry,
+		"@mupt-ai/pi-ai/oauth": piAiOauthEntry,
+		"@mariozechner/pi-coding-agent": piCodingAgentEntry,
+		"@mariozechner/pi-agent-core": piAgentCoreEntry,
+		"@mariozechner/pi-tui": piTuiEntry,
+		"@mariozechner/pi-ai": piAiEntry,
+		"@mariozechner/pi-ai/oauth": piAiOauthEntry,
 		typebox: typeboxEntry,
 		"typebox/compile": typeboxCompileEntry,
 		"typebox/value": typeboxValueEntry,

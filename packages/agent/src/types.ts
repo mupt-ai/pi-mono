@@ -10,7 +10,7 @@ import type {
 	TextContent,
 	Tool,
 	ToolResultMessage,
-} from "@mariozechner/pi-ai";
+} from "@mupt-ai/pi-ai";
 import type { Static, TSchema } from "typebox";
 
 /**
@@ -254,7 +254,7 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 /**
  * Thinking/reasoning level for models that support it.
  * Note: "xhigh" is only supported by selected model families. Use model thinking-level metadata
- * from @mariozechner/pi-ai to detect support for a concrete model.
+ * from @mupt-ai/pi-ai to detect support for a concrete model.
  */
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 

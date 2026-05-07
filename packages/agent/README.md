@@ -1,6 +1,6 @@
 # @mupt-ai/pi-agent-core
 
-Stateful agent with tool execution and event streaming. Built on `@mariozechner/pi-ai`.
+Stateful agent with tool execution and event streaming. Built on `@mupt-ai/pi-ai`.
 
 ## Installation
 
@@ -12,7 +12,7 @@ npm install @mupt-ai/pi-agent-core
 
 ```typescript
 import { Agent } from "@mupt-ai/pi-agent-core";
-import { getModel } from "@mariozechner/pi-ai";
+import { getModel } from "@mupt-ai/pi-ai";
 
 const agent = new Agent({
   initialState: {
