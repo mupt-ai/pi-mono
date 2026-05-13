@@ -31,11 +31,7 @@ jobs:
         run: npm run build
 
       - name: Publish @mupt-ai/pi-agent-core
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --workspace packages/agent --access public
+        run: npm run publish:agent
 
       - name: Publish @mupt-ai/pi-coding-agent
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --workspace packages/coding-agent --access public
+        run: npm run publish:coding-agent
