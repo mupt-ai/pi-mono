@@ -24,11 +24,8 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
 
-      - name: Update npm
-        run: npm install -g npm@latest
-
-      - name: Show npm version
-        run: npm --version
+      - name: Show trusted publishing npm version
+        run: npx -y npm@latest --version
 
       - name: Install dependencies
         run: npm ci
@@ -37,7 +34,7 @@ jobs:
         run: npm run build
 
       - name: Publish @mupt-ai/pi-agent-core
-        run: npm run publish:agent
+        run: npx -y npm@latest publish --workspace packages/agent --access public --provenance
 
       - name: Publish @mupt-ai/pi-coding-agent
-        run: npm run publish:coding-agent
+        run: npx -y npm@latest publish --workspace packages/coding-agent --access public --provenance
