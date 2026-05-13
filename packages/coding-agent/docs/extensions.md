@@ -141,8 +141,8 @@ To share extensions via npm or git as pi packages, see [packages.md](packages.md
 |---------|---------|
 | `@mupt-ai/pi-coding-agent` | Extension types (`ExtensionAPI`, `ExtensionContext`, events) |
 | `typebox` | Schema definitions for tool parameters |
-| `@mupt-ai/pi-ai` | AI utilities (`StringEnum` for Google-compatible enums) |
-| `@mupt-ai/pi-tui` | TUI components for custom rendering |
+| `@earendil-works/pi-ai` | AI utilities (`StringEnum` for Google-compatible enums) |
+| `@earendil-works/pi-tui` | TUI components for custom rendering |
 
 npm dependencies work too. Add a `package.json` next to your extension (or in a parent directory), run `npm install`, and imports from `node_modules/` are resolved automatically.
 
@@ -1230,7 +1230,7 @@ See [dynamic-tools.ts](../examples/extensions/dynamic-tools.ts) for a full examp
 
 ```typescript
 import { Type } from "typebox";
-import { StringEnum } from "@mupt-ai/pi-ai";
+import { StringEnum } from "@earendil-works/pi-ai";
 
 pi.registerTool({
   name: "my_tool",
@@ -1388,7 +1388,7 @@ pi.registerCommand("stats", {
 Optional: add argument auto-completion for `/command ...`:
 
 ```typescript
-import type { AutocompleteItem } from "@mupt-ai/pi-tui";
+import type { AutocompleteItem } from "@earendil-works/pi-tui";
 
 pi.registerCommand("deploy", {
   description: "Deploy to an environment",
@@ -1703,8 +1703,8 @@ async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 
 ```typescript
 import { Type } from "typebox";
-import { StringEnum } from "@mupt-ai/pi-ai";
-import { Text } from "@mupt-ai/pi-tui";
+import { StringEnum } from "@earendil-works/pi-ai";
+import { Text } from "@earendil-works/pi-tui";
 
 pi.registerTool({
   name: "my_tool",
@@ -1772,7 +1772,7 @@ async execute(toolCallId, params) {
 }
 ```
 
-**Important:** Use `StringEnum` from `@mupt-ai/pi-ai` for string enums. `Type.Union`/`Type.Literal` doesn't work with Google's API.
+**Important:** Use `StringEnum` from `@earendil-works/pi-ai` for string enums. `Type.Union`/`Type.Literal` doesn't work with Google's API.
 
 **Argument preparation:** `prepareArguments(args)` is optional. If defined, it runs before schema validation and before `execute()`. Use it to mimic an older accepted input shape when pi resumes an older session whose stored tool call arguments no longer match the current schema. Return the object you want validated against `parameters`. Keep the public schema strict. Do not add deprecated compatibility fields to `parameters` just to keep old resumed sessions working.
 
@@ -2010,7 +2010,7 @@ Use `context.state` for cross-slot shared state. Keep slot-local caches on the r
 Renders the tool call or header:
 
 ```typescript
-import { Text } from "@mupt-ai/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 
 renderCall(args, theme, context) {
   const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
@@ -2329,7 +2329,7 @@ See [github-issue-autocomplete.ts](../examples/extensions/github-issue-autocompl
 For complex UI, use `ctx.ui.custom()`. This temporarily replaces the editor with your component until `done()` is called:
 
 ```typescript
-import { Text, Component } from "@mupt-ai/pi-tui";
+import { Text, Component } from "@earendil-works/pi-tui";
 
 const result = await ctx.ui.custom<boolean>((tui, theme, keybindings, done) => {
   const text = new Text("Press Enter to confirm, Escape to cancel", 1, 1);
@@ -2388,7 +2388,7 @@ Replace the main input editor with a custom implementation (vim mode, emacs mode
 
 ```typescript
 import { CustomEditor, type ExtensionAPI } from "@mupt-ai/pi-coding-agent";
-import { matchesKey } from "@mupt-ai/pi-tui";
+import { matchesKey } from "@earendil-works/pi-tui";
 
 class VimEditor extends CustomEditor {
   private mode: "normal" | "insert" = "insert";
@@ -2438,7 +2438,7 @@ See [tui.md](tui.md) Pattern 7 for a complete example with mode indicator.
 Register a custom renderer for messages with your `customType`:
 
 ```typescript
-import { Text } from "@mupt-ai/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 
 pi.registerMessageRenderer("my-extension", (message, options, theme) => {
   const { expanded } = options;

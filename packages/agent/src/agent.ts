@@ -11,7 +11,7 @@ import {
 	type ToolResultMessage,
 	type Transport,
 	validateToolArguments,
-} from "@mupt-ai/pi-ai";
+} from "@earendil-works/pi-ai";
 import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.js";
 import type {
 	AfterToolCallContext,

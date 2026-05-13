@@ -1,5 +1,5 @@
+import type { ImageContent, Message, TextContent } from "@earendil-works/pi-ai";
 import { type AgentMessage, uuidv7 } from "@mupt-ai/pi-agent-core";
-import type { ImageContent, Message, TextContent } from "@mupt-ai/pi-ai";
 import { randomUUID } from "crypto";
 import {
 	appendFileSync,

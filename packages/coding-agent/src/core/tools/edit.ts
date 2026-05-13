@@ -1,5 +1,5 @@
+import { Box, Container, Spacer, Text } from "@earendil-works/pi-tui";
 import type { AgentTool } from "@mupt-ai/pi-agent-core";
-import { Box, Container, Spacer, Text } from "@mupt-ai/pi-tui";
 import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile, writeFile as fsWriteFile } from "fs/promises";
 import { type Static, Type } from "typebox";

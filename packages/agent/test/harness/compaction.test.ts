@@ -5,7 +5,7 @@ import {
 	type Model,
 	registerFauxProvider,
 	type Usage,
-} from "@mupt-ai/pi-ai";
+} from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	type CompactionPreparation,

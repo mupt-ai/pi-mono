@@ -1,7 +1,7 @@
+import type { Message } from "@earendil-works/pi-ai";
+import type { AgentMessage, MessageRenderer } from "@earendil-works/pi-web-ui";
+import { defaultConvertToLlm, registerMessageRenderer } from "@earendil-works/pi-web-ui";
 import { Alert } from "@mariozechner/mini-lit/dist/Alert.js";
-import type { Message } from "@mupt-ai/pi-ai";
-import type { AgentMessage, MessageRenderer } from "@mupt-ai/pi-web-ui";
-import { defaultConvertToLlm, registerMessageRenderer } from "@mupt-ai/pi-web-ui";
 import { html } from "lit";
 
 // ============================================================================

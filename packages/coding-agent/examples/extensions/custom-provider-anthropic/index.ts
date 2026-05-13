@@ -42,7 +42,7 @@ import {
 	type Tool,
 	type ToolCall,
 	type ToolResultMessage,
-} from "@mupt-ai/pi-ai";
+} from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@mupt-ai/pi-coding-agent";
 
 // =============================================================================

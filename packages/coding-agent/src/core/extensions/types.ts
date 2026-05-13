@@ -9,13 +9,6 @@
  */
 
 import type {
-	AgentMessage,
-	AgentToolResult,
-	AgentToolUpdateCallback,
-	ThinkingLevel,
-	ToolExecutionMode,
-} from "@mupt-ai/pi-agent-core";
-import type {
 	Api,
 	AssistantMessageEvent,
 	AssistantMessageEventStream,
@@ -27,7 +20,7 @@ import type {
 	SimpleStreamOptions,
 	TextContent,
 	ToolResultMessage,
-} from "@mupt-ai/pi-ai";
+} from "@earendil-works/pi-ai";
 import type {
 	AutocompleteItem,
 	AutocompleteProvider,
@@ -38,7 +31,14 @@ import type {
 	OverlayHandle,
 	OverlayOptions,
 	TUI,
-} from "@mupt-ai/pi-tui";
+} from "@earendil-works/pi-tui";
+import type {
+	AgentMessage,
+	AgentToolResult,
+	AgentToolUpdateCallback,
+	ThinkingLevel,
+	ToolExecutionMode,
+} from "@mupt-ai/pi-agent-core";
 import type { Static, TSchema } from "typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { BashResult } from "../bash-executor.js";

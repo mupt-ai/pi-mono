@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@mupt-ai/pi-ai";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@mupt-ai/pi-coding-agent";
 
 function isAssistantMessage(message: unknown): message is AssistantMessage {

@@ -1,5 +1,5 @@
 {
-	"name": "@mupt-ai/pi-tui",
+	"name": "@earendil-works/pi-tui",
 	"version": "0.74.0",
 	"description": "Terminal User Interface library with differential rendering for efficient text-based applications",
 	"type": "module",

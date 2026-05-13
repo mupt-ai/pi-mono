@@ -4,7 +4,7 @@
  * Shows how to select a specific model and thinking level.
  */
 
-import { getModel } from "@mupt-ai/pi-ai";
+import { getModel } from "@earendil-works/pi-ai";
 import { AuthStorage, createAgentSession, ModelRegistry } from "@mupt-ai/pi-coding-agent";
 
 // Set up auth storage and model registry

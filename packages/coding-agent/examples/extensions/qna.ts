@@ -7,7 +7,7 @@
  * 3. Loads the result into the editor for user to fill in answers
  */
 
-import { complete, type UserMessage } from "@mupt-ai/pi-ai";
+import { complete, type UserMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@mupt-ai/pi-coding-agent";
 import { BorderedLoader } from "@mupt-ai/pi-coding-agent";
 

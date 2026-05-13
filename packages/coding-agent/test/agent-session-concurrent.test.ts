@@ -5,7 +5,6 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent } from "@mupt-ai/pi-agent-core";
 import {
 	type AssistantMessage,
 	type AssistantMessageEvent,
@@ -13,7 +12,8 @@ import {
 	getModel,
 	type ImageContent,
 	type TextContent,
-} from "@mupt-ai/pi-ai";
+} from "@earendil-works/pi-ai";
+import { Agent } from "@mupt-ai/pi-agent-core";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.js";

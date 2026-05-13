@@ -4,7 +4,7 @@
 
 Extensions and custom tools can render custom TUI components for interactive user interfaces. This page covers the component system and available building blocks.
 
-**Source:** [`@mupt-ai/pi-tui`](https://github.com/earendil-works/pi/tree/main/packages/tui)
+**Source:** [`@earendil-works/pi-tui`](https://github.com/earendil-works/pi/tree/main/packages/tui)
 
 ## Component Interface
 
@@ -33,7 +33,7 @@ The TUI appends a full SGR reset and OSC 8 reset at the end of each rendered lin
 Components that display a text cursor and need IME (Input Method Editor) support should implement the `Focusable` interface:
 
 ```typescript
-import { CURSOR_MARKER, type Component, type Focusable } from "@mupt-ai/pi-tui";
+import { CURSOR_MARKER, type Component, type Focusable } from "@earendil-works/pi-tui";
 
 class MyInput implements Component, Focusable {
   focused: boolean = false;  // Set by TUI when focus changes
@@ -59,7 +59,7 @@ This enables IME candidate windows to appear at the correct position for CJK inp
 When a container component (dialog, selector, etc.) contains an `Input` or `Editor` child, the container must implement `Focusable` and propagate the focus state to the child. Otherwise, the hardware cursor won't be positioned correctly for IME input.
 
 ```typescript
-import { Container, type Focusable, Input } from "@mupt-ai/pi-tui";
+import { Container, type Focusable, Input } from "@earendil-works/pi-tui";
 
 class SearchDialog extends Container implements Focusable {
   private searchInput: Input;
@@ -179,10 +179,10 @@ See [overlay-qa-tests.ts](../examples/extensions/overlay-qa-tests.ts) for compre
 
 ## Built-in Components
 
-Import from `@mupt-ai/pi-tui`:
+Import from `@earendil-works/pi-tui`:
 
 ```typescript
-import { Text, Box, Container, Spacer, Markdown } from "@mupt-ai/pi-tui";
+import { Text, Box, Container, Spacer, Markdown } from "@earendil-works/pi-tui";
 ```
 
 ### Text
@@ -264,7 +264,7 @@ const image = new Image(
 Use `matchesKey()` for key detection:
 
 ```typescript
-import { matchesKey, Key } from "@mupt-ai/pi-tui";
+import { matchesKey, Key } from "@earendil-works/pi-tui";
 
 handleInput(data: string) {
   if (matchesKey(data, Key.up)) {
@@ -290,7 +290,7 @@ handleInput(data: string) {
 **Critical:** Each line from `render()` must not exceed the `width` parameter.
 
 ```typescript
-import { visibleWidth, truncateToWidth } from "@mupt-ai/pi-tui";
+import { visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
 
 render(width: number): string[] {
   // Truncate long lines
@@ -311,7 +311,7 @@ Example: Interactive selector
 import {
   matchesKey, Key,
   truncateToWidth, visibleWidth
-} from "@mupt-ai/pi-tui";
+} from "@earendil-works/pi-tui";
 
 class MySelector {
   private items: string[];
@@ -426,7 +426,7 @@ renderResult(result, options, theme, context) {
 
 ```typescript
 import { getMarkdownTheme } from "@mupt-ai/pi-coding-agent";
-import { Markdown } from "@mupt-ai/pi-tui";
+import { Markdown } from "@earendil-works/pi-tui";
 
 renderResult(result, options, theme, context) {
   const mdTheme = getMarkdownTheme();
@@ -587,12 +587,12 @@ These patterns cover the most common UI needs in extensions. **Copy these patter
 
 ### Pattern 1: Selection Dialog (SelectList)
 
-For letting users pick from a list of options. Use `SelectList` from `@mupt-ai/pi-tui` with `DynamicBorder` for framing.
+For letting users pick from a list of options. Use `SelectList` from `@earendil-works/pi-tui` with `DynamicBorder` for framing.
 
 ```typescript
 import type { ExtensionAPI } from "@mupt-ai/pi-coding-agent";
 import { DynamicBorder } from "@mupt-ai/pi-coding-agent";
-import { Container, type SelectItem, SelectList, Text } from "@mupt-ai/pi-tui";
+import { Container, type SelectItem, SelectList, Text } from "@earendil-works/pi-tui";
 
 pi.registerCommand("pick", {
   handler: async (_args, ctx) => {
@@ -679,11 +679,11 @@ pi.registerCommand("fetch", {
 
 ### Pattern 3: Settings/Toggles (SettingsList)
 
-For toggling multiple settings. Use `SettingsList` from `@mupt-ai/pi-tui` with `getSettingsListTheme()`.
+For toggling multiple settings. Use `SettingsList` from `@earendil-works/pi-tui` with `getSettingsListTheme()`.
 
 ```typescript
 import { getSettingsListTheme } from "@mupt-ai/pi-coding-agent";
-import { Container, type SettingItem, SettingsList, Text } from "@mupt-ai/pi-tui";
+import { Container, type SettingItem, SettingsList, Text } from "@earendil-works/pi-tui";
 
 pi.registerCommand("settings", {
   handler: async (_args, ctx) => {
@@ -823,7 +823,7 @@ Replace the main input editor with a custom implementation. Useful for modal edi
 
 ```typescript
 import { CustomEditor, type ExtensionAPI } from "@mupt-ai/pi-coding-agent";
-import { matchesKey, truncateToWidth } from "@mupt-ai/pi-tui";
+import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 
 type Mode = "normal" | "insert";
 

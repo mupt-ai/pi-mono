@@ -5,7 +5,7 @@
  */
 
 import type { ExtensionAPI } from "@mupt-ai/pi-coding-agent";
-import { Text } from "@mupt-ai/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 
 export default function (pi: ExtensionAPI) {
 	pi.registerCommand("tui", {

@@ -10,8 +10,6 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentTool } from "@mupt-ai/pi-agent-core";
-import { Agent } from "@mupt-ai/pi-agent-core";
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
@@ -24,8 +22,10 @@ import type {
 	ThinkingContent,
 	ToolCall,
 	Usage,
-} from "@mupt-ai/pi-ai";
-import { createAssistantMessageEventStream } from "@mupt-ai/pi-ai";
+} from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import type { AgentTool } from "@mupt-ai/pi-agent-core";
+import { Agent } from "@mupt-ai/pi-agent-core";
 import { AgentSession, type AgentSessionEvent } from "../src/core/agent-session.js";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { ModelRegistry } from "../src/core/model-registry.js";

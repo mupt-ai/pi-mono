@@ -1,6 +1,6 @@
+import type { AssistantMessage, ToolResultMessage, Usage } from "@earendil-works/pi-ai";
+import { Container, Text, type TUI } from "@earendil-works/pi-tui";
 import type { AgentMessage } from "@mupt-ai/pi-agent-core";
-import type { AssistantMessage, ToolResultMessage, Usage } from "@mupt-ai/pi-ai";
-import { Container, Text, type TUI } from "@mupt-ai/pi-tui";
 import { beforeAll, describe, expect, test, vi } from "vitest";
 import type { AgentSessionEvent } from "../../../src/core/agent-session.js";
 import type { SessionContext } from "../../../src/core/session-manager.js";

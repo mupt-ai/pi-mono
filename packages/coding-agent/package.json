@@ -39,8 +39,8 @@
 	},
 	"dependencies": {
 		"@mupt-ai/pi-agent-core": "^0.74.0",
-		"@mupt-ai/pi-ai": "^0.74.0",
-		"@mupt-ai/pi-tui": "^0.74.0",
+		"@earendil-works/pi-ai": "^0.74.0",
+		"@earendil-works/pi-tui": "^0.74.0",
 		"@silvia-odwyer/photon-node": "^0.3.4",
 		"chalk": "^5.5.0",
 		"diff": "^8.0.2",

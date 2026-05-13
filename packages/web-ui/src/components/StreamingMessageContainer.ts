@@ -1,5 +1,5 @@
+import type { ToolResultMessage } from "@earendil-works/pi-ai";
 import type { AgentMessage, AgentTool } from "@mupt-ai/pi-agent-core";
-import type { ToolResultMessage } from "@mupt-ai/pi-ai";
 import { html, LitElement } from "lit";
 import { property, state } from "lit/decorators.js";
 
