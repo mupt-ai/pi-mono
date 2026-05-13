@@ -30,8 +30,10 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Publish @mupt-ai/pi-agent-core
-        run: npm run publish:agent
-
-      - name: Publish @mupt-ai/pi-coding-agent
-        run: npm run publish:coding-agent
+      - name: Publish packages
+        run: |
+          npm publish --workspace packages/ai --access public --provenance
+          npm publish --workspace packages/tui --access public --provenance
+          npm publish --workspace packages/agent --access public --provenance
+          npm publish --workspace packages/coding-agent --access public --provenance
+          npm publish --workspace packages/web-ui --access public --provenance
