@@ -1,4 +1,4 @@
-import type { AgentMessage } from "@mupt-ai/pi-agent-core";
+import { type AgentMessage, uuidv7 } from "@mupt-ai/pi-agent-core";
 import type { ImageContent, Message, TextContent } from "@mupt-ai/pi-ai";
 import { randomUUID } from "crypto";
 import {
@@ -15,7 +15,6 @@ import {
 } from "fs";
 import { readdir, readFile, stat } from "fs/promises";
 import { join, resolve } from "path";
-import { v7 as uuidv7 } from "uuid";
 import { getAgentDir as getDefaultAgentDir, getSessionsDir } from "../config.js";
 import {
 	type BashExecutionMessage,
