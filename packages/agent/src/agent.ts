@@ -33,10 +33,13 @@ import type {
 	AgentToolResult,
 	BeforeToolCallContext,
 	BeforeToolCallResult,
+	QueueMode,
 	SerializedAgentError,
 	StreamFn,
 	ToolExecutionMode,
 } from "./types.js";
+
+export type { QueueMode } from "./types.js";
 
 function defaultConvertToLlm(messages: AgentMessage[]): Message[] {
 	return messages.filter(
@@ -65,8 +68,6 @@ const DEFAULT_MODEL = {
 	contextWindow: 0,
 	maxTokens: 0,
 } satisfies Model<any>;
-
-export type QueueMode = "all" | "one-at-a-time";
 
 type MutableAgentState = Omit<AgentState, "isStreaming" | "streamingMessage" | "pendingToolCalls" | "errorMessage"> & {
 	isStreaming: boolean;
